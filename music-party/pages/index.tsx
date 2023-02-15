@@ -30,7 +30,7 @@ export default function Home() {
   useEffect(() => {
     if (!conn.current) {
       conn.current = new Connection(
-        `${window.location.origin}/music`,
+        `http://dev2.lgc2333.top:22004/music`,
         async (music: Music, enqueuerName: string, playedTime: number) => {
           console.log(music);
           setSrc(music.url);
