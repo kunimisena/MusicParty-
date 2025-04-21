@@ -57,24 +57,29 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
         />
         <Button
           ml={2}
-          alignSelf={{ base: 'flex-end', md: 'center' }} // 按钮对齐方式
-          minH={{ base: '80px', md: '40px' }} // 保持与输入框同高
+          alignSelf={{ base: 'flex-end', md: 'center' }}
+          minH={{ base: '80px', md: '40px' }}
           onClick={() => {
-            if (id.length > 0)
+            if (id.length > 0) {
+              const formattedId =
+                apiName.includes('QQMusic') ? `${id},${id}` : id;
+        
               props.conn
-                .enqueueMusic(id, apiName)
+                .enqueueMusic(formattedId, apiName)
                 .then(() => {
                   toastEnqueueOk(t);
                   setId('');
                 })
                 .catch((e) => {
-                  toastError(t, `音乐 {id: ${id}} 加入队列失败`);
+                  toastError(t, `音乐 {id: ${formattedId}} 加入队列失败`);
                   console.error(e);
                 });
+            }
           }}
         >
           点歌
         </Button>
+
       </Flex>
     </>
   );
