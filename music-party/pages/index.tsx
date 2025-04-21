@@ -149,6 +149,31 @@ export default function Home() {
       setInited(true);
     }
   }, []);
+  useEffect(() => {
+    // 移动端优化代码
+    if (typeof window !== 'undefined') { // 确保只在客户端运行
+      const meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, initial-scale=1, maximum-scale=1';
+      document.head.prepend(meta);
+
+      const style = document.createElement('style');
+      style.innerHTML = `
+        @media (max-width: 768px) {
+          body { padding: 8px !important; }
+          .container > * { width: 100% !important; }
+          button { min-width: 120px !important; }
+          /* 以下新增针对你的布局 */
+          [data-area="nav"], [data-area="main"] {
+            grid-column: 1 / -1 !important;
+          }
+          .chakra-tabs__tablist {
+            flex-direction: column;
+          }
+        }`;
+      document.head.appendChild(style);
+    }
+  }, []);
 
   return (
     <Grid templateAreas={`"nav main"`} gridTemplateColumns={'2fr 5fr'} gap='1'>
@@ -161,9 +186,20 @@ export default function Home() {
       <GridItem area={'nav'}>
         <Stack m={4} spacing={4}>
           <Card>
-            <CardHeader>
-              <Heading>{`欢迎, ${userName}!`}</Heading>
-            </CardHeader>
+          <CardHeader>
+            <Box>
+              <Heading mb={2}>{`欢迎, ${userName}!`}</Heading>
+              <Text fontSize="md" color="gray.600">
+                请改成群内昵称
+              </Text>
+              <Text fontSize="md" color="gray.600" mt={1}>
+                一人播放队列里请只点一首歌哦！（不含正在播放）
+              </Text>
+              <Text fontSize="md" color="gray.600" mt={1}>
+                非必要请勿切歌和置顶！
+              </Text>
+            </Box>
+          </CardHeader>
             <CardBody>
               <Stack>
                 <Popover>
