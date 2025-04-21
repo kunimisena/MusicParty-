@@ -49,7 +49,9 @@ public class QQMusicApi : IMusicApi
 
     public async Task<Music> GetMusicByIdAsync(string id)
     {
-        var ids = id.Split(',');
+        // 原代码：var ids = id.Split(',');
+        // 修改为：
+        var ids = new string[] { id, id }; // ids[0] = id, ids[1] = id
         var resp = await _http.GetStringAsync(_url + $"/song?songmid={ids[0]}");
         var j = JsonNode.Parse(resp)!;
         if (j["result"]!.GetValue<int>() != 100)
@@ -57,7 +59,7 @@ public class QQMusicApi : IMusicApi
         var name = j["data"]!["track_info"]!["name"]!.GetValue<string>();
         var artists = j["data"]!["track_info"]!["singer"]!.AsArray()
             .Select(x => x!["name"]!.GetValue<string>()).ToArray();
-        return new Music(id, name, artists);
+        return new Music(ids[0] + "," + ids[1], name, artists);
     }
 
     public async Task<IEnumerable<Music>> SearchMusicByNameAsync(string name)
