@@ -31,18 +31,34 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
         </Select>
       </Flex>
 
-      <Flex flexDirection={'row'}>
+      <Flex 
+        flexDirection={'row'}
+        alignItems={{ base: 'stretch', md: 'center' }} // 关键修复点
+      >
         <Input
           flex={1}
           type={'text'}
           value={id}
-          placeholder={'输入音乐 ID'}
-          onChange={(e) => {
-            setId(e.target.value);
+          placeholder={'输入音乐ID (示例: music.163.com/#/song?id=123 或 y.qq.com/n/ryqq/songDetail/456)'}
+          onChange={(e) => setId(e.target.value)}
+          minH={{ base: '80px', md: '40px' }} // 增加自适应高度
+          sx={{
+            '&::placeholder': {
+              whiteSpace: 'pre-wrap',
+              // ...其他样式保持不变
+            },
+            // 新增输入框容器样式
+            _input: {
+              minH: 'inherit !important', // 强制继承外层高度
+              alignItems: 'flex-start',   // 多行文本顶部对齐
+              py: { base: 2, md: 1 }      // 垂直内间距自适应
+            }
           }}
         />
         <Button
           ml={2}
+          alignSelf={{ base: 'flex-end', md: 'center' }} // 按钮对齐方式
+          minH={{ base: '80px', md: '40px' }} // 保持与输入框同高
           onClick={() => {
             if (id.length > 0)
               props.conn
