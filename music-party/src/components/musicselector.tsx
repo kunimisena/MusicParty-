@@ -62,7 +62,7 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           onClick={() => {
             if (id.length > 0) {
               const formattedId =
-                apiName.includes('QQMusic') ? `${id},${id}` : id;
+                apiName.includes('QQMusic') ? `${id},${id}` : id;    //  适配QQ音乐，前端如果检查到是QQ的api，那么把id复制一遍，填充到songmId,meidaId中。后端QQ音乐要求是逗号分隔的两个字符串
         
               props.conn
                 .enqueueMusic(formattedId, apiName)
