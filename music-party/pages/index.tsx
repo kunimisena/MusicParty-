@@ -192,11 +192,29 @@ export default function Home() {
               <Text fontSize="md" color="gray.600">
                 请改成群内昵称
               </Text>
+              <Text fontSize="md" color="gray.600">
+                b站id点歌可以通过“@”来输入特定的P（否则默认1P），例如BV1Dv411T7E2@3
+              </Text>
+              <Text fontSize="md" color="gray.600">
+                网易云和QQ很好理解如何点歌了
+              </Text>
               <Text fontSize="md" color="gray.600" mt={1}>
-                一人播放队列里请只点一首歌哦！（不含正在播放）
+                人多的时候，一人播放队列里请只点一首歌哦！（不含正在播放，人少就无所谓了）
               </Text>
               <Text fontSize="md" color="gray.600" mt={1}>
                 非必要请勿切歌和置顶！
+              </Text>
+              <Text fontSize="md" color="gray.600" mt={1}>
+                账号绑定没有出现歌单的情况，注意账号的隐私设置！
+              </Text>
+              <Text fontSize="md" color="gray.600" mt={1}>
+                显示出问题可以试试刷新一下网页，或者找找被屏蔽的弹窗
+              </Text>
+              <Text fontSize="md" color="gray.600" mt={1}>
+                手机端兼容性较差的话，请在手机浏览器上切换成电脑端。试试火狐和谷歌浏览器！
+              </Text>
+              <Text fontSize="md" color="gray.600" mt={1}>
+                有问题多联系！
               </Text>
             </Box>
           </CardHeader>
