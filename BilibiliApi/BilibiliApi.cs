@@ -48,7 +48,7 @@ public class BilibiliApi : IMusicApi
     {
         var http = new HttpClient();
         http.DefaultRequestHeaders.Add("Cookie", $"SESSDATA={sessdata}");
-        var resp = await http.GetStringAsync("https://api.bilibili.com/nav");
+        var resp = await http.GetStringAsync("https://api.bilibili.com/x/web-interface/nav");
         var j = JsonNode.Parse(resp)!;
         return j["code"]!.GetValue<int>() == 0;
     }
