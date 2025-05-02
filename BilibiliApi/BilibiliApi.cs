@@ -101,12 +101,27 @@ public class BilibiliApi : IMusicApi
         if (j is null || j.code != 0 || j.data is null)
             throw new Exception($"Unable to get playable music, message: {resp}");
 
+        // 获取原始 CDN URL
+        var originalUrl = j.data.dash.audio.OrderByDescending(x => x.id).First().baseUrl;
+
+        // 强制替换为华为云 CDN 节点
+        var uri = new Uri(originalUrl);
+        var newUrl = new UriBuilder(uri)
+        {
+            Host = "upos-sz-mirrorhw.bilivideo.com" // 关键修改：替换域名
+        }.Uri.ToString();
+
+        // 打印日志验证（调试完成后可移除）
+        Console.WriteLine($"原CDN URL: {originalUrl}");
+        Console.WriteLine($"新CDN URL: {newUrl}");
+
         return new PlayableMusic(music)
         {
             Url = $"/musicproxy?timestamp={DateTimeOffset.Now.ToUnixTimeSeconds()}",
             Length = j.data.dash.duration * 1000,
-            NeedProxy = true, TargetUrl = j.data.dash.audio.First().baseUrl,      //j.data.dash.audio.OrderByDescending(x => x.id).First().baseUrl改为用第一个音频流
-            Referer = "https://www.bilibili.com"
+            NeedProxy = true,
+            TargetUrl = newUrl, // 使用修改后的 URL
+            Referer = "https://www.bilibili.com",
         };
     }
 
