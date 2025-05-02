@@ -153,10 +153,6 @@ public class BilibiliApi : IMusicApi
             Host = "upos-sz-mirrorhw.bilivideo.com" // 关键修改：替换域名
         }.Uri.ToString();
 
-        // 打印日志验证（调试完成后可移除）
-        Console.WriteLine($"原CDN URL: {originalUrl}");
-        Console.WriteLine($"新CDN URL: {newUrl}");
-
         return new PlayableMusic(music)
         {
             Url = $"/musicproxy?timestamp={DateTimeOffset.Now.ToUnixTimeSeconds()}",
