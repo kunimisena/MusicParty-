@@ -105,7 +105,7 @@ public class BilibiliApi : IMusicApi
         {
             Url = $"/musicproxy?timestamp={DateTimeOffset.Now.ToUnixTimeSeconds()}",
             Length = j.data.dash.duration * 1000,
-            NeedProxy = true, TargetUrl = j.data.dash.audio.OrderByDescending(x => x.id).First().baseUrl,
+            NeedProxy = true, TargetUrl = j.data.dash.audio.First();      //j.data.dash.audio.OrderByDescending(x => x.id).First().baseUrl改为用第一个音频流
             Referer = "https://www.bilibili.com"
         };
     }
