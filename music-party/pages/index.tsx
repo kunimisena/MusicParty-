@@ -196,6 +196,9 @@ export default function Home() {
                 b站id点歌可以通过“@”来输入特定的P（否则默认1P），例如BV1Dv411T7E2@3
               </Text>
               <Text fontSize="md" color="gray.600">
+                为了避免卡顿，B站视频最多20min的时长！逾者不予播放
+              </Text>
+              <Text fontSize="md" color="gray.600">
                 网易云和QQ很好理解如何点歌了
               </Text>
               <Text fontSize="md" color="gray.600" mt={1}>
