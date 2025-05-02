@@ -80,9 +80,9 @@ public class BilibiliApi : IMusicApi
 
     public async Task<Music> GetMusicByIdAsync(string id)
     {
-        // 步骤1：解析输入参数（兼容带@和不带@的情况）
+        // 解析输入（支持 BV1xxx@2 格式）
         string bvid;
-        int p = 1; // 默认取第1P（用户习惯从1开始计数）
+        int p = 1; // 默认第1P
         if (id.Contains('@'))
         {
             var parts = id.Split('@');
@@ -95,22 +95,30 @@ public class BilibiliApi : IMusicApi
             bvid = id;
         }
     
-        // 步骤2：调用B站API
+        // 调用 Bilibili API
         var resp = await _http.GetStringAsync($"https://api.bilibili.com/x/web-interface/view?bvid={bvid}");
         var j = JsonSerializer.Deserialize<BVQueryJson.RootObject>(resp);
         if (j is null || j.code != 0 || j.data is null)
             throw new Exception($"无法获取音乐信息，响应: {resp}");
     
-        // 步骤3：获取正确的cid（处理分P逻辑）
-        int targetIndex = p - 1; // 用户输入1对应数组索引0
-        if (j.data.pages == null || j.data.pages.Count == 0)
-            throw new Exception("该视频没有分P内容");
-        if (targetIndex >= j.data.pages.Count)
-            throw new Exception($"分P号 {p} 超出范围（最大 {j.data.pages.Count}）");
+        // 获取正确的 CID（处理分P逻辑）
+        long targetCid;
+        if (p == 1)
+        {
+            // 使用默认的 data.cid（兼容旧输入）
+            targetCid = j.data.cid;
+        }
+        else
+        {
+            // 检查分P是否存在
+            if (j.data.pages == null || j.data.pages.Count < p - 1)
+                throw new Exception($"分P号 {p} 超出范围（最大 {j.data.pages?.Count ?? 0}）");
+            
+            // 注意：pages 数组索引从0开始，用户输入从1开始
+            targetCid = j.data.pages[p - 1].cid;
+        }
     
-        string targetCid = j.data.pages[targetIndex].cid.ToString();
-    
-        // 步骤4：构造Music对象（格式：BV号,分P的CID）
+        // 构造 Music 对象
         return new Music($"{bvid},{targetCid}", j.data.title, new[] { j.data.owner.name });
     }
 
@@ -260,20 +268,31 @@ public class BilibiliApi : IMusicApi
 
     private class BVQueryJson
     {
+        // 对应整个 JSON 响应
         public record RootObject(
             long code,
             Data? data
         );
-
+    
+        // 对应 data 对象（新增 pages 字段）
         public record Data(
             string bvid,
             string title,
             Owner owner,
-            long cid
+            long cid,        // 注意：这是默认的 CID（对应第1P）
+            List<Page> pages // 新增分P列表
         );
-
+    
+        // 对应 data.owner 对象
         public record Owner(
             string name
+        );
+    
+        // 新增分P对象定义（字段名与 JSON 完全一致）
+        public record Page(
+            long cid,   // 分P的 CID
+            int page,   // 分P号（用户看到的1,2,3...）
+            string part // 分P标题
         );
     }
 
