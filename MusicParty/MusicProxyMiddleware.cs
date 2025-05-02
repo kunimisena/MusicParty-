@@ -91,9 +91,31 @@ public class MusicProxyMiddleware
         _currentMimeType = req.MimeType;
 
         var message = new HttpRequestMessage(HttpMethod.Get, req.Url);
+        // 强制覆盖 User-Agent（使用更真实的浏览器标识）
+        message.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+        // 强制覆盖 Referer（必须精确到具体视频页，如 https://www.bilibili.com/video/BV1xxx）
         if (req.Referer is not null)
+        {
             message.Headers.Referrer = new Uri(req.Referer);
-        message.Headers.UserAgent.ParseAdd(req.UserAgent ?? "Mozilla/5.0");
+        }
+        else
+        {
+            // 如果 Referer 未传递，设置默认值（需结合 BVID）
+            message.Headers.Referrer = new Uri("https://www.bilibili.com");
+        }
+
+        // 添加 Origin 头（必须）
+        message.Headers.Add("Origin", "https://www.bilibili.com");
+
+        // 传递 Cookies（关键！）
+        // 从全局 HttpClient 中获取 Cookie 并附加到本次请求
+        var cookies = _http.DefaultRequestHeaders.GetValues("Cookie").FirstOrDefault();
+        if (!string.IsNullOrEmpty(cookies))
+        {
+            message.Headers.Add("Cookie", cookies);
+        }
+
         message.Headers.Host = new Uri(req.Url).Host;
 
         var resp = await _http.SendAsync(message);
