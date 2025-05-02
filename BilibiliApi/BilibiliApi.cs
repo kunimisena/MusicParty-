@@ -34,14 +34,22 @@ public class BilibiliApi : IMusicApi
         Console.WriteLine("Login success!");
     }
 
+    public static string BilibiliApiGlobalCookieStorage { get; private set; } = "";
+
     private async Task SESSDATALogin(string sessdata)
     {
         if (!await CheckSESSDATAAsync(sessdata))
             throw new LoginException($"Login failed, check your SESSDATA.");
+        
+        // 原有代码：手动添加 Cookie 到 HttpClient
         _http.DefaultRequestHeaders.Add("Cookie", $"SESSDATA={sessdata}");
         var resp2 = await _http.GetAsync("https://www.bilibili.com");
         var cookies = resp2.Headers.GetValues("Set-Cookie");
         _http.DefaultRequestHeaders.Add("Cookie", cookies);
+
+        // 新增代码：将拼接后的 Cookie 保存到全局变量
+        // 格式示例：SESSDATA=xxxx; sid=xxxx; other_cookie=xxxx
+        BilibiliApiGlobalCookieStorage = $"SESSDATA={sessdata}; " + string.Join("; ", cookies);
     }
 
     private async Task<bool> CheckSESSDATAAsync(string sessdata)
