@@ -100,9 +100,16 @@ public class BilibiliApi : IMusicApi
         var j = JsonSerializer.Deserialize<PlayUrlJson.RootObject>(resp);
         if (j is null || j.code != 0 || j.data is null)
             throw new Exception($"Unable to get playable music, message: {resp}");
+        
+        var maxAllowedDuration = 1200; // 最大允许时长（秒）
+        
+        if (j.data.dash.duration > maxAllowedDuration)
+        {
+            throw new Exception($"音频时长过长（{j.data.dash.duration} 秒），超过限制 {maxAllowedDuration} 秒");
+        }
 
         // 获取原始 CDN URL
-        var originalUrl = j.data.dash.audio.OrderByDescending(x => x.id).First().baseUrl;
+        var originalUrl = j.data.dash.audio.OrderBy(x => x.id).First().baseUrl;     //j.data.dash.audio.OrderByDescending(x => x.id).First().baseUrl改为最差音质
 
         // 强制替换为华为云 CDN 节点
         var uri = new Uri(originalUrl);
