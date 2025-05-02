@@ -39,7 +39,7 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           flex={1}
           type={'text'}
           value={id}
-          placeholder={'输入音乐ID (示例: music.163.com/#/song?id=123 或 y.qq.com/n/ryqq/songDetail/456)'}
+          placeholder={'输入音乐ID (示例: music.163.com/#/song?id=你要输入的 或 y.qq.com/n/ryqq/songDetail/你要输入的 或"BV号@P数")'}
           onChange={(e) => setId(e.target.value)}
           minH={{ base: '80px', md: '40px' }} // 增加自适应高度
           sx={{
