@@ -39,7 +39,7 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           flex={1}
           type={'text'}
           value={id}
-          placeholder={'输入音乐ID (示例: music.163.com/#/song?id=你要输入的 或 y.qq.com/n/ryqq/songDetail/你要输入的 或"BV号@P数")'}
+          placeholder={'输入音乐ID (示例: music.163.com/#/song?id=你要输入的 或 y.qq.com/n/ryqq/songDetail/你要输入的)'}
           onChange={(e) => setId(e.target.value)}
           minH={{ base: '80px', md: '40px' }} // 增加自适应高度
           sx={{
@@ -62,7 +62,7 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           onClick={() => {
             if (id.length > 0) {
               const formattedId =
-                apiName.includes('QQMusic') ? `${id},${id}` : id;    //  适配QQ音乐，前端如果检查到是QQ的api，那么把id复制一遍，填充到songmId,meidaId中。后端QQ音乐要求是逗号分隔的两个字符串
+                apiName.includes('QQMusic') ? `${id},${id}` : id;
         
               props.conn
                 .enqueueMusic(formattedId, apiName)
