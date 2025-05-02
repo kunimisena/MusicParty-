@@ -110,7 +110,7 @@ public class MusicProxyMiddleware
 
         // 传递 Cookies（关键！）
         // 从全局 HttpClient 中获取 Cookie 并附加到本次请求
-        var cookies = _http.DefaultRequestHeaders.GetValues("Cookie").FirstOrDefault();
+        var cookies = MusicParty.MusicApi.Bilibili.BilibiliApi.BilibiliApiGlobalCookieStorage;
         if (!string.IsNullOrEmpty(cookies))
         {
             message.Headers.Add("Cookie", cookies);
