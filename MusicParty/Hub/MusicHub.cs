@@ -14,6 +14,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     private readonly MusicBroadcaster _musicBroadcaster;
     private readonly UserManager _userManager;
     private readonly ILogger<MusicHub> _logger;
+    private readonly LinkedList<(string name, string content, long timestamp)> _messageQueue = new();
 
     public MusicHub(IEnumerable<IMusicApi> musicApis, MusicBroadcaster musicBroadcaster,
         UserManager userManager,
@@ -124,9 +125,21 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     public async Task ChatSay(string content)
     {
         var name = _userManager.FindUserById(Context.User!.Identity!.Name!)!.Name;
-        while (Last5Chat.Count >= 30) Last5Chat.Dequeue();
-        Last5Chat.Enqueue((name, content));
-        await NewChat(Clients.All, name, content);
+        
+        // 屎山核心：用LinkedList暴力操作
+        var newMsg = (name, content, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        
+        // 头插法保证顺序
+        _messageQueue.AddFirst(newMsg);
+        
+        // 手动控制队列长度
+        while (_messageQueue.Count > 30) 
+        {
+            _messageQueue.RemoveLast();
+        }
+        
+        // 暴力发送整个队列（保持顺序）
+        await Clients.All.SendAsync("UpdateFullChat", _messageQueue.ToList());
     }
 
     #endregion
