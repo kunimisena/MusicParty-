@@ -106,9 +106,12 @@ export default function Home() {
             u.map((x) => (x.id === id ? { id, name: newName } : x))
           );
         },
-        async (name: string, content: string) => {
-          setChatContent((c) => c.concat({ name, content }));
-        },
+async (name: string, content: string) => {
+  setChatContent((c) => {
+    const newChat = [...c, { name, content }];
+    return newChat.slice(-30); // ▲ 只保留最新30条消息
+  });
+},
         async (content: string) => {
           // todo
           console.log(content);
@@ -176,7 +179,17 @@ export default function Home() {
   }, []);
 
   return (
-    <Grid templateAreas={`"nav main"`} gridTemplateColumns={'2fr 5fr'} gap='1'>
+    <Grid 
+  templateAreas={{
+    base: `"nav" "main"`,  // 手机：上下排列
+    md: `"nav main"`       // 桌面：左右排列
+  }}
+  gridTemplateColumns={{
+    base: '1fr',          // 手机：单列
+    md: '2fr 5fr'         // 桌面：两列比例
+  }}
+  gap='1'
+>
       <Head>
         <title>🎵 音趴 🎵</title>
         <meta name='description' content='享受音趴！' />
@@ -308,13 +321,25 @@ export default function Home() {
                   发送
                 </Button>
               </Flex>
-              <UnorderedList>
-                {chatContent.map((s) => (
-                  <ListItem key={Math.random() * 1000}>
-                    {`${s.name}: ${s.content}`}
-                  </ListItem>
-                ))}
-              </UnorderedList>
+<UnorderedList 
+  maxH="300px"          // ▼ 固定高度
+  overflowY="auto"      // ▼ 自动滚动条
+  pr={2}                // ▼ 滚动条边距
+  listStyleType="none"  // ▼ 移除列表点（可选）
+  spacing={2}           // ▼ 消息间距（可选）
+>
+  {chatContent.map((s, index) => (
+    <ListItem 
+      key={`msg-${index}`}       // ▲ 更稳定的key生成方式
+      bg="gray.50"               // ▲ 消息背景色（可选）
+      p={2}                     // ▲ 内边距（可选）
+      borderRadius="md"          // ▲ 圆角（可选）
+    >
+      <Text as="span" fontWeight="bold">{s.name}:</Text>
+      <Text as="span" ml={2}>{s.content}</Text>
+    </ListItem>
+  ))}
+</UnorderedList>
             </CardBody>
           </Card>
         </Stack>
