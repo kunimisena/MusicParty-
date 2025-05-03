@@ -9,7 +9,6 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 {
     private static HashSet<string> OnlineUsers { get; } = new();
     private static List<string> DuplicatedConnectionIds { get; } = new();
-    private static Queue<(string name, string content)> Last5Chat { get; } = new();
     private readonly IEnumerable<IMusicApi> _musicApis;
     private readonly MusicBroadcaster _musicBroadcaster;
     private readonly UserManager _userManager;
@@ -38,11 +37,11 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         OnlineUsers.Add(Context.User.Identity.Name!);
         await OnlineUserLogin(Clients.Others, Context.User.Identity.Name!);
-        if (Last5Chat.Count > 0)
+        if (_messageQueue.Count > 0)
         {
-            foreach (var chat in Last5Chat)
+            foreach (var chat in _messageQueue.Reverse())
             {
-                await NewChat(Clients.Caller, chat.name, chat.content);
+                await NewChat(Clients.Caller, chat.name, chat.content, chat.timestamp);
             }
         }
 
@@ -126,20 +125,16 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     {
         var name = _userManager.FindUserById(Context.User!.Identity!.Name!)!.Name;
         
-        // 屎山核心：用LinkedList暴力操作
-        var newMsg = (name, content, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+         var newMsg = (name: name, content: content, timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         
-        // 头插法保证顺序
         _messageQueue.AddFirst(newMsg);
         
-        // 手动控制队列长度
         while (_messageQueue.Count > 30) 
         {
             _messageQueue.RemoveLast();
         }
         
-        // 暴力发送整个队列（保持顺序）
-        await Clients.All.SendAsync("UpdateFullChat", _messageQueue.ToList());
+        await NewChat(Clients.All, newMsg.name, newMsg.content, newMsg.timestamp);
     }
 
     #endregion
@@ -164,8 +159,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         await Clients.All.SendAsync(nameof(OnlineUserRename), id, _userManager.FindUserById(id)!.Name);
     }
 
-    private async Task NewChat(IClientProxy target, string name, string content)
+    private async Task NewChat(IClientProxy target, string name, string content, long timestamp)
     {
-        await target.SendAsync(nameof(NewChat), name, content);
+        await target.SendAsync(nameof(NewChat), name, content, timestamp);
     }
 }
