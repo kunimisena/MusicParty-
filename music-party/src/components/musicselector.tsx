@@ -35,26 +35,54 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
         flexDirection={'row'}
         alignItems={{ base: 'stretch', md: 'center' }} // 关键修复点
       >
-        <Input
-          flex={1}
-          type={'text'}
-          value={id}
-          placeholder={'输入音乐ID (示例: music.163.com/#/song?id=你要输入的 或 y.qq.com/n/ryqq/songDetail/你要输入的 或BV号@P数（可不含@P数）)'}
-          onChange={(e) => setId(e.target.value)}
-          minH={{ base: '80px', md: '40px' }} // 增加自适应高度
-          sx={{
-            '&::placeholder': {
-              whiteSpace: 'pre-wrap',
-              // ...其他样式保持不变
-            },
-            // 新增输入框容器样式
-            _input: {
-              minH: 'inherit !important', // 强制继承外层高度
-              alignItems: 'flex-start',   // 多行文本顶部对齐
-              py: { base: 2, md: 1 }      // 垂直内间距自适应
-            }
-          }}
-        />
+<Input
+  flex={1}
+  type="text"
+  value={id}
+  placeholder="输入音乐ID  示例: music.163.com/#/song?id=你要输入的 或 y.qq.com/n/ryqq/songDetail/你要输入的 或 BV号@P数（可不含@P数，P数是数字不带P字母）"
+  onChange={(e) => setId(e.target.value)}
+  minH={{
+    base: '80px', // 手机端
+    md: '60px',   // 平板端
+    xl: '40px'    // 桌面端
+  }}
+  sx={{
+    // === 核心修复配置 ===
+    position: 'relative',
+    _placeholder: {
+      position: 'absolute !important',
+      top: '0 !important',     // 占位符绝对贴顶
+      left: '0 !important',
+      lineHeight: '1.2 !important',
+      whiteSpace: 'pre-wrap',
+      transform: 'none !important',
+      fontSize: { base: 'sm', md: 'md' }
+    },
+    _input: {
+      position: 'absolute !important',
+      top: '0 !important',     // 输入文本绝对贴顶
+      left: '0 !important',
+      minH: 'inherit !important',
+      lineHeight: '1.2 !important',
+      width: '100% !important',
+      padding: '0 !important'
+    },
+    // === 显式断点控制 ===
+    '@media (max-width: 819px)': { 
+      minHeight: '80px',
+      _input: { height: '80px !important' }
+    },
+    '@media (min-width: 820px) and (max-width: 1799px)': {
+      minHeight: '60px',
+      _input: { height: '60px !important' }
+    },
+    '@media (min-width: 1800px)': {
+      minHeight: '40px',
+      _input: { height: '40px !important' },
+      _placeholder: { whiteSpace: 'nowrap' }
+    }
+  }}
+/>
         <Button
           ml={2}
           alignSelf={{ base: 'flex-end', md: 'center' }}
