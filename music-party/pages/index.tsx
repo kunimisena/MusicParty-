@@ -59,8 +59,8 @@ export default function Home() {
   >([]);
   const [inited, setInited] = useState(false);
   const [chatContent, setChatContent] = useState<
-    { name: string; content: string }[]
-  >([]);
+  { name: string; content: string; timestamp: number }[]
+  >([]); // 初始化为空数组
   const [chatToSend, setChatToSend] = useState('');
   const [apis, setApis] = useState<string[]>([]);
   const t = useToast();
@@ -106,12 +106,17 @@ export default function Home() {
             u.map((x) => (x.id === id ? { id, name: newName } : x))
           );
         },
-async (name: string, content: string) => {
-  setChatContent((c) => {
-    const newChat = [...c, { name, content }];
-    return newChat.slice(-30); // ▲ 只保留最新30条消息
-  });
-},
+        async (name: string, content: string, timestamp: number) => {
+          setChatContent((c = []) => {
+            const newMsg = {          // ✅ 创建新消息对象
+              name,
+              content,
+              timestamp  // 直接使用后端传来的时间戳
+            };
+            return [newMsg, ...c]     // ✅ 新消息插入数组头部
+              .slice(0, 30);          // ✅ 保留最新的30条（不再需要reverse）
+          });
+        },
         async (content: string) => {
           // todo
           console.log(content);
@@ -321,25 +326,47 @@ async (name: string, content: string) => {
                   发送
                 </Button>
               </Flex>
-<UnorderedList 
-  maxH="300px"          // ▼ 固定高度
-  overflowY="auto"      // ▼ 自动滚动条
-  pr={2}                // ▼ 滚动条边距
-  listStyleType="none"  // ▼ 移除列表点（可选）
-  spacing={2}           // ▼ 消息间距（可选）
->
-  {chatContent.map((s, index) => (
-    <ListItem 
-      key={`msg-${index}`}       // ▲ 更稳定的key生成方式
-      bg="gray.50"               // ▲ 消息背景色（可选）
-      p={2}                     // ▲ 内边距（可选）
-      borderRadius="md"          // ▲ 圆角（可选）
-    >
-      <Text as="span" fontWeight="bold">{s.name}:</Text>
-      <Text as="span" ml={2}>{s.content}</Text>
-    </ListItem>
-  ))}
-</UnorderedList>
+                <UnorderedList 
+                  maxH="300px"          
+                  overflowY="auto"      
+                  pr={2}
+                  listStyleType="none"  
+                  spacing={2}
+                  width="100%"
+                >
+                  {[...chatContent] // 创建副本
+                    .map((s) => (
+                      <ListItem
+                        key={`msg-${s.timestamp}`}
+                        bg="gray.50"
+                        p={2}
+                        borderRadius="md"
+                        wordBreak="break-word"
+                      >
+                        {/* 时间显示 */}
+                        <Text 
+                          as="span" 
+                          fontSize="xs"
+                          color="gray.500"
+                          mr={2}
+                        >
+                          {new Date(s.timestamp).toLocaleString()}
+                        </Text>
+                        {/* 消息内容 */}
+                        <Text as="span" fontWeight="bold">{s.name}:</Text>
+                        <Text 
+                          as="span" 
+                          ml={2}
+                          whiteSpace="pre-wrap"
+                          overflowWrap="break-word"
+                          display="inline-block"
+                          maxW="full"
+                        >
+                          {s.content}
+                        </Text>
+                      </ListItem>
+                    ))}
+                </UnorderedList>
             </CardBody>
           </Card>
         </Stack>
