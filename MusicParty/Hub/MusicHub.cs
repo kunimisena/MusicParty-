@@ -124,7 +124,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     public async Task ChatSay(string content)
     {
         var name = _userManager.FindUserById(Context.User!.Identity!.Name!)!.Name;
-        while (Last5Chat.Count >= 5) Last5Chat.Dequeue();
+        while (Last5Chat.Count >= 30) Last5Chat.Dequeue();
         Last5Chat.Enqueue((name, content));
         await NewChat(Clients.All, name, content);
     }
