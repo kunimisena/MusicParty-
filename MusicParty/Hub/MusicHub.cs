@@ -122,25 +122,21 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         return OnlineUsers.Select(x => new User(x, _userManager.FindUserById(x)!.Name)).ToList();
     }
 
+// MusicHub.cs 关键逻辑
     public async Task ChatSay(string content)
     {
         var name = _userManager.FindUserById(Context.User!.Identity!.Name!)!.Name;
-        
-        // 屎山核心：用LinkedList暴力操作
         var newMsg = (name, content, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         
-        // 头插法保证顺序
-        _messageQueue.AddFirst(newMsg);
+        _messageQueue.AddFirst(newMsg); // ✅ 新消息插入头部
+        while (_messageQueue.Count > 30) _messageQueue.RemoveLast(); // ✅ 保持30条
         
-        // 手动控制队列长度
-        while (_messageQueue.Count > 30) 
-        {
-            _messageQueue.RemoveLast();
-        }
-        
-        // 暴力发送整个队列（保持顺序）
-        await Clients.All.SendAsync("UpdateFullChat", _messageQueue.ToList());
+        await Clients.All.SendAsync("UpdateFullChat", _messageQueue.ToList()); // ✅ 发送全量
     }
+
+    // 需要添加历史记录获取方法
+    public List<(string name, string content, long timestamp)> GetChatHistory() 
+    => _messageQueue.ToList();
 
     #endregion
 
