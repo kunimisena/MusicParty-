@@ -13,7 +13,12 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     private readonly MusicBroadcaster _musicBroadcaster;
     private readonly UserManager _userManager;
     private readonly ILogger<MusicHub> _logger;
-    private readonly LinkedList<(string name, string content, long timestamp)> _messageQueue = new();
+    private static readonly LinkedList<(string name, string content, long timestamp)> _messageQueue = new();
+
+    public List<(string name, string content, long timestamp)> GetChatHistory()
+    {
+        return _messageQueue.ToList();
+    }
 
     public MusicHub(IEnumerable<IMusicApi> musicApis, MusicBroadcaster musicBroadcaster,
         UserManager userManager,
@@ -37,12 +42,9 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         OnlineUsers.Add(Context.User.Identity.Name!);
         await OnlineUserLogin(Clients.Others, Context.User.Identity.Name!);
-        if (_messageQueue.Count > 0)
+        foreach (var msg in _messageQueue.OrderByDescending(m => m.timestamp))
         {
-            foreach (var chat in _messageQueue.Reverse())
-            {
-                await NewChat(Clients.Caller, chat.name, chat.content, chat.timestamp);
-            }
+            await Clients.Caller.SendAsync("NewChat", msg.name, msg.content, msg.timestamp);
         }
 
         if (_musicBroadcaster.NowPlaying is not null)
