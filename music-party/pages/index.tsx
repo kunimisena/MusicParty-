@@ -107,15 +107,16 @@ export default function Home() {
           );
         },
         async (name: string, content: string, timestamp: number) => {
-          setChatContent((c = []) => {
-            const newMsg = {          // ✅ 创建新消息对象
+          // Use functional update to ensure we're working with the latest state
+          setChatContent(prevChatContent => {
+              const newMsg = {
               name,
               content: content.trim(),
-              timestamp  // 直接使用后端传来的时间戳
+              timestamp: timestamp * 1000
             };
-            return [newMsg, ...c]     // 新消息插入头部
-              .slice(0, 30);          // 保留最新的30条
-          });
+            // Prepend new message and keep only the latest 30
+            return [newMsg, ...prevChatContent].slice(0, 30);
+          }); // ✅ Correctly prepends and handles timestamp
         },
         async (content: string) => {
           // todo
@@ -134,8 +135,13 @@ export default function Home() {
             setQueue(queue);
             const users = await conn.current!.getOnlineUsers();
             setOnlineUsers(users);
+            // 获取并设置聊天历史记录
             const chatHistory = await conn.current!.getChatHistory();
-            setChatContent(chatHistory);
+            setChatContent(
+              chatHistory.map(msg => 
+                ({...msg, timestamp: msg.timestamp * 1000}) // 转换秒为毫秒
+              ).reverse() // 反转顺序新消息在上
+            );
           } catch (err: any) {
             toastError(t, err);
           }
@@ -336,8 +342,7 @@ export default function Home() {
                   spacing={2}
                   width="100%"
                 >
-                  {[...chatContent] // 创建副本
-                    .map((s) => (
+                  {chatContent.map((s) => ( // chatContent is already newest first [msg3, msg2, msg1]
                       <ListItem
                         key={`msg-${s.timestamp}`}
                         bg="gray.50"
@@ -345,14 +350,14 @@ export default function Home() {
                         borderRadius="md"
                         wordBreak="break-word"
                       >
-                        {/* 时间显示 */}
-                        <Text 
-                          as="span" 
+                        {/* 时间显示 - Use timestamp (already in ms) */}
+                        <Text
+                          as="span"
                           fontSize="xs"
                           color="gray.500"
                           mr={2}
                         >
-                          {new Date(s.timestamp).toLocaleString()}
+                          {new Date(s.timestamp).toLocaleString()} {/* Timestamp is now in ms */}
                         </Text>
                         {/* 消息内容 */}
                         <Text as="span" fontWeight="bold">{s.name}:</Text>
