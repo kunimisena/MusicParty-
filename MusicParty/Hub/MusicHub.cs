@@ -127,7 +127,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     {
         var name = _userManager.FindUserById(Context.User!.Identity!.Name!)!.Name;
         
-         var newMsg = (name: name, content: content, timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var newMsg = (name: name, content: content, timestamp: DateTimeOffset.UtcNow.ToUnixTimeSeconds());
         
         _messageQueue.AddFirst(newMsg);
         
@@ -136,7 +136,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             _messageQueue.RemoveLast();
         }
         
-        await NewChat(Clients.All, newMsg.name, newMsg.content, newMsg.timestamp);
+        await Clients.All.SendAsync(nameof(NewChat), newMsg.name, newMsg.content, newMsg.timestamp);
     }
 
     #endregion
@@ -163,6 +163,6 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
     private async Task NewChat(IClientProxy target, string name, string content, long timestamp)
     {
-        await target.SendAsync(nameof(NewChat), name, content, timestamp);
+        await target.SendAsync(nameof(NewChat), name, content.Trim(), timestamp);
     }
 }
