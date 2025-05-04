@@ -42,16 +42,20 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         OnlineUsers.Add(Context.User.Identity.Name!);
         await OnlineUserLogin(Clients.Others, Context.User.Identity.Name!);
-        foreach (var msg in _messageQueue.OrderByDescending(m => m.timestamp))
+        
+        // 发送历史消息（旧到新）
+        foreach (var msg in _messageQueue.OrderBy(m => m.timestamp))
         {
-            await Clients.Caller.SendAsync("NewChat", msg.name, msg.content, msg.timestamp);
-        }
+            {
+                await Clients.Caller.SendAsync(nameof(NewChat), msg.name, msg.content, msg.timestamp);
+            }
 
-        if (_musicBroadcaster.NowPlaying is not null)
-        {
-            var (music, enqueuerId) = _musicBroadcaster.NowPlaying.Value;
-            await SetNowPlaying(Clients.Caller, music, _userManager.FindUserById(enqueuerId)!.Name,
-                (int)(DateTime.Now - _musicBroadcaster.NowPlayingStartedTime).TotalSeconds);
+            // 发送当前播放信息
+            if (_musicBroadcaster.NowPlaying is not null) {
+                var (music, enqueuerId) = _musicBroadcaster.NowPlaying.Value;
+                await SetNowPlaying(Clients.Caller, music, _userManager.FindUserById(enqueuerId)!.Name,
+                    (int)(DateTime.Now - _musicBroadcaster.NowPlayingStartedTime).TotalSeconds);
+            }
         }
     }
 
