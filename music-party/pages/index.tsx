@@ -137,7 +137,7 @@ export default function Home() {
             setOnlineUsers(users);
             // 获取并设置聊天历史记录
             const chatHistory = await conn.current!.getChatHistory();
-            setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000}).reverse());
+            setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
           } catch (err: any) {
             toastError(t, err);
           }
