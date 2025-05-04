@@ -69,10 +69,10 @@ export class Connection {
   public async chatSay(content: string): Promise<void> {
     await this._conn.invoke("ChatSay", content.trim());
   }
-  public async getChatHistory(): Promise<Array<{ 
-      name: string; 
-      content: string; 
-      timestamp: number 
+  public async getChatHistory(): Promise<Array<{
+        name: string;
+        content: string;
+        timestamp: number;
     }>> {
       return await this._conn.invoke("GetChatHistory");
   }
