@@ -67,7 +67,7 @@ export class Connection {
     return await this._conn.invoke("GetOnlineUsers");
   }
   public async chatSay(content: string): Promise<void> {
-    await this._conn.invoke("ChatSay", content);
+    await this._conn.invoke("ChatSay", content.trim());
   }
   public async getChatHistory(): Promise<Array<{ 
       name: string; 
