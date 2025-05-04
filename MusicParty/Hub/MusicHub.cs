@@ -1,21 +1,31 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using MusicParty.MusicApi;
+using System.Text.Json.Serialization;
 
 namespace MusicParty.Hub;
 
 [Authorize]
 public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 {
+    public class ChatMessage
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = "";
+        [JsonPropertyName("content")]
+        public string Content { get; set; } = "";
+        [JsonPropertyName("timestamp")]
+        public long Timestamp { get; set; }
+    }
     private static HashSet<string> OnlineUsers { get; } = new();
     private static List<string> DuplicatedConnectionIds { get; } = new();
     private readonly IEnumerable<IMusicApi> _musicApis;
     private readonly MusicBroadcaster _musicBroadcaster;
     private readonly UserManager _userManager;
     private readonly ILogger<MusicHub> _logger;
-    private static readonly LinkedList<(string name, string content, long timestamp)> _messageQueue = new();
+    private static readonly LinkedList<ChatMessage> _messageQueue = new();
 
-    public List<(string name, string content, long timestamp)> GetChatHistory()
+     public List<ChatMessage> GetChatHistory()
     {
         return _messageQueue.ToList();
     }
@@ -44,10 +54,10 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         await OnlineUserLogin(Clients.Others, Context.User.Identity.Name!);
         
         // 发送历史消息（旧到新）
-        foreach (var msg in _messageQueue.OrderBy(m => m.timestamp))
+        foreach (var msg in _messageQueue.OrderBy(m => m.Timestamp))
         {
             {
-                await Clients.Caller.SendAsync(nameof(NewChat), msg.name, msg.content, msg.timestamp);
+                await Clients.Caller.SendAsync(nameof(NewChat), msg.Name, msg.Content, msg.Timestamp);
             }
 
             // 发送当前播放信息
@@ -131,7 +141,12 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     {
         var name = _userManager.FindUserById(Context.User!.Identity!.Name!)!.Name;
         
-        var newMsg = (name: name, content: content, timestamp: DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        var newMsg = new ChatMessage 
+        {
+            Name = name,
+            Content = content.Trim(),
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
         
         _messageQueue.AddFirst(newMsg);
         
@@ -140,7 +155,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             _messageQueue.RemoveLast();
         }
         
-        await Clients.All.SendAsync(nameof(NewChat), newMsg.name, newMsg.content, newMsg.timestamp);
+        await Clients.All.SendAsync(nameof(NewChat), newMsg.Name, newMsg.Content, newMsg.Timestamp);
     }
 
     #endregion
