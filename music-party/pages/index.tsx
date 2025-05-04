@@ -134,6 +134,8 @@ export default function Home() {
             setQueue(queue);
             const users = await conn.current!.getOnlineUsers();
             setOnlineUsers(users);
+            const chatHistory = await conn.current!.getChatHistory();
+            setChatContent(chatHistory);
           } catch (err: any) {
             toastError(t, err);
           }
