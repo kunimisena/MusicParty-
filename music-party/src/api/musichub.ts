@@ -18,8 +18,8 @@ export class Connection {
     musicCut: (operatorName: string, music: Music) => void,
     onlineUserLogin: (id: string, name: string) => void,
     onlineUserLogout: (id: string) => void,
-    onlineUserRename: (id: string, newName: string) => void,
-    newChat: (name: string, content: string) => void,
+    onlineUserRename: (id: string, newName: string) => void, 
+    newChat: (name: string, content: string, timestamp: number) => void,  // ✅ 增加timestamp参数
     globalMessage: (content: string) => void,
     abort: (msg: string) => void
   ) {
@@ -69,6 +69,14 @@ export class Connection {
   public async chatSay(content: string): Promise<void> {
     await this._conn.invoke("ChatSay", content);
   }
+  public async getChatHistory(): Promise<Array<{ 
+      name: string; 
+      content: string; 
+      timestamp: number 
+    }>> {
+      return await this._conn.invoke("GetChatHistory");
+  }
+    
 }
 export interface Music {
   url: string;
