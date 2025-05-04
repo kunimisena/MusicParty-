@@ -110,11 +110,11 @@ export default function Home() {
           setChatContent((c = []) => {
             const newMsg = {          // ✅ 创建新消息对象
               name,
-              content,
+              content: content.trim(),
               timestamp  // 直接使用后端传来的时间戳
             };
-            return [newMsg, ...c]     // ✅ 新消息插入数组头部
-              .slice(0, 30);          // ✅ 保留最新的30条（不再需要reverse）
+            return [newMsg, ...c]     // 新消息插入头部
+              .slice(0, 30);          // 保留最新的30条
           });
         },
         async (content: string) => {
@@ -123,7 +123,7 @@ export default function Home() {
         },
         async (msg: string) => {
           console.error(msg);
-          toastError(t, msg);
+          toastError(t, msg); // ✅ 直接使用已定义的msg参数
         }
       );
       conn.current
