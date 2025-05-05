@@ -54,7 +54,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         await OnlineUserLogin(Clients.Others, Context.User.Identity.Name!);
         
         // 发送历史消息（旧到新）
-        foreach (var msg in _messageQueue.OrderByDescending(m => m.Timestamp))
+        foreach (var msg in _messageQueue.OrderBy(m => m.Timestamp))
         {
             {
                 await Clients.Caller.SendAsync(nameof(NewChat), msg.Name, msg.Content, msg.Timestamp);
