@@ -353,7 +353,15 @@ export default function Home() {
                           color="gray.500"
                           mr={2}
                         >
-                          {new Date(s.timestamp).toLocaleString()} {/* Timestamp is now in ms */}
+                          {new Date(s.timestamp).toLocaleString('zh-CN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                           })}
                         </Text>
                         {/* 消息内容 */}
                         <Text as="span" fontWeight="bold">{s.name}:</Text>
