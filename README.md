@@ -1,4 +1,13 @@
 # Music Party
+kunimisena基于lgc2333版本的自用改动
+原项目https://github.com/EveElseIf/MusicParty
+前端增加了对qq群友使用的要求
+调整了网易云音乐api的请求方式，调通了qq音乐api，给b站api换了华为云cdn，加入了常见请求头
+增加了酷狗音乐点歌，酷狗音乐只支持歌单名称绑定和关键字搜索
+主要由AI完成修改，本人仅仅debug了一下，运行良好
+
+网易云api项目没了。但网上依然有源码，工作正常
+qq音乐和酷狗音乐apiserver项目均在github上
 ## No Chinese?
 别急，主要是因为输代码懒得切中文，所以有空再写。
 ## How to Build
