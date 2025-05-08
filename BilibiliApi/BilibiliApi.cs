@@ -150,10 +150,10 @@ public class BilibiliApi : IMusicApi
         var uri = new Uri(originalUrl);
         var newUrl = new UriBuilder(uri)
         {
-            Host = "upos-sz-mirrorhw.bilivideo.com" // 关键修改：替换域名
-        }.Uri.ToString();
-
-        return new PlayableMusic(music)
+            Host = "upos-sz-mirrorhw.bilivideo.com" // 关键修改：替换域名  
+        }.Uri.ToString();                           //upos-sz-mirror08c.bilivideo.com华为
+                                                    //upos-sz-mirrorcos.bilivideo.com腾讯 
+        return new PlayableMusic(music)             //upos-sz-mirrorali.bilivideo.com阿里
         {
             Url = $"/musicproxy?timestamp={DateTimeOffset.Now.ToUnixTimeSeconds()}",
             Length = j.data.dash.duration * 1000,

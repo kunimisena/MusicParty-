@@ -5,16 +5,8 @@ using System;
 using System.Net;
 using System.IO; // 确保引入了 File 操作相关的命名空间
 using System.Threading.Tasks; // 确保引入了 Task 相关的命名空间
-using System.Linq; // 需要 System.Linq 来使用 Select
-using System; // 确保引入了 Exception 的命名空间
-using System.Linq; // 需要 System.Linq 来使用 Select 和 Any
-using System; // 确保引入了 Exception 的命名空间
 using System.Collections.Generic; // 需要 IEnumerable
-using System.Threading.Tasks; // 需要 Task
 using System.Linq; // 需要 System.Linq 来使用 Select 和 Any
-using System; // 确保引入了 Exception 的命名空间
-using System.Collections.Generic; // 需要 IEnumerable
-using System.Threading.Tasks; // 需要 Task
 
 namespace MusicParty.MusicApi.KuGouMusic;
 

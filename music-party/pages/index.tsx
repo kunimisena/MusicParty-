@@ -224,6 +224,9 @@ export default function Home() {
               <Text fontSize="md" color="gray.600">
                 网易云和QQ很好理解如何点歌了
               </Text>
+              <Text fontSize="md" color="gray.600">
+                酷狗只能播放搜索到的第一首歌，因此id点歌直接输入详尽的关键字（例如曲名+歌手）
+              </Text>
               <Text fontSize="md" color="gray.600" mt={1}>
                 人多的时候，一人播放队列里请只点一首歌哦！（不含正在播放，人少就无所谓了）
               </Text>
