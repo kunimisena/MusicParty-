@@ -45,6 +45,34 @@ import { MusicQueue } from '../src/components/musicqueue';
 import { BilibiliBinder } from '../src/components/bilibilibinder';
 import { KuGouBinder } from '../src/components/kugoubinder';
 
+// --- Cookie 辅助函数 ---
+const COOKIE_USERNAME_KEY = 'chat_username_preference'; // 用于存储用户名的 Cookie键
+const DEFAULT_USERNAME_ON_NO_COOKIE = "请设置用户名"; // Cookie中没有用户名时的默认提示
+
+const getCookie = (name: string): string | null => {
+  if (typeof document === 'undefined') { // 防止在服务器端渲染时调用 document
+    return null;
+  }
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  if (match) {
+    return decodeURIComponent(match[2]);
+  }
+  return null;
+};
+
+const setCookie = (name: string, value: string, days: number) => {
+  if (typeof document === 'undefined') { // 防止在服务器端渲染时调用 document
+    return;
+  }
+  let expires = "";
+  if (days) {
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    expires = "; expires=" + date.toUTCString();
+  }
+  document.cookie = name + "=" + (encodeURIComponent(value) || "")  + expires + "; path=/";
+};
+
 export default function Home() {
   const [src, setSrc] = useState('');
   const [playtime, setPlaytime] = useState(0);
@@ -131,26 +159,44 @@ export default function Home() {
       conn.current
         .start()
         .then(async () => {
+            // 连接成功后，处理用户名
+          const preferredNameFromCookie = getCookie(COOKIE_USERNAME_KEY);
+          const initialNameCandidate = preferredNameFromCookie || DEFAULT_USERNAME_ON_NO_COOKIE;
+          //console.log(`[INIT] 初始候选用户名 (来自Cookie或默认): ${initialNameCandidate}`);
           try {
-            const queue = await conn.current!.getMusicQueue();
-            setQueue(queue);
+            // 1. 尝试将候选用户名设置到服务器
+            await conn.current!.rename(initialNameCandidate);
+            // toastInfo(t, `尝试设置用户名为: ${initialNameCandidate}`); // 可选的提示
+            console.log(`[INIT] 已发送 rename 请求，用户名为: ${initialNameCandidate}`);
+
+            // 2. 从服务器获取最终确认的用户名
+            const userProfile = await getProfile();
+            const confirmedName = userProfile.name;
+            setUserName(confirmedName);
+            setCookie(COOKIE_USERNAME_KEY, confirmedName, 365); // 保存服务器确认的名称到Cookie
+            console.log(`[INIT] 服务器确认的用户名: ${confirmedName} (已存入Cookie)`);
+            if (confirmedName === DEFAULT_USERNAME_ON_NO_COOKIE && !preferredNameFromCookie) {
+              toastInfo(t, "欢迎您！请记得修改您的用户名。");
+            }
+
+            
+            // 3. 获取其他初始数据
+            const queueData = await conn.current!.getMusicQueue(); // 变量名从 queue 改为 queueData
+            setQueue(queueData); // 使用新的变量名
             const users = await conn.current!.getOnlineUsers();
             setOnlineUsers(users);
-            // 获取并设置聊天历史记录
             const chatHistory = await conn.current!.getChatHistory();
             setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
           } catch (err: any) {
             toastError(t, err);
+            try {
+              const fallbackProfile = await getProfile();
+              setUserName(fallbackProfile.name);
+              setCookie(COOKIE_USERNAME_KEY, fallbackProfile.name, 365); // 保存当前服务器名称
+            } catch (profileError: any) {
+              toastError(t, `获取用户配置也失败了: ${profileError.toString()}`);
+            }
           }
-        })
-        .catch((e) => {
-          console.error(e);
-          toastError(t, '请刷新页面重试');
-        });
-
-      getProfile()
-        .then((u) => {
-          setUserName(u.name);
         })
         .catch((e) => {
           console.error(e);
@@ -161,7 +207,7 @@ export default function Home() {
 
       setInited(true);
     }
-  }, []);
+  }, [t]);
   useEffect(() => {
     // 移动端优化代码
     if (typeof window !== 'undefined') { // 确保只在客户端运行
@@ -271,12 +317,22 @@ export default function Home() {
                             <Button
                               colorScheme='blue'
                               onClick={async () => {
-                                if (newName === '') return;
-                                await conn.current!.rename(newName);
-                                const user = await getProfile();
-                                setUserName(user.name);
-                                onClose();
-                                setNewName('');
+                                if (newName.trim() === '') {
+                                  toastInfo(t, "新名字不能为空");
+                                  return;
+                                }
+                                try {
+                                  await conn.current!.rename(newName.trim());
+                                  const user = await getProfile(); // 从服务器获取确认后的名字
+                                  setUserName(user.name);
+                                  setCookie(COOKIE_USERNAME_KEY, user.name, 365); // 更新Cookie
+                                  toastInfo(t, `名字已成功修改为: ${user.name}`);
+                                  onClose();
+                                  setNewName(''); // 清空输入框
+                                } catch (error: any) {
+                                  console.error("Failed to rename:", error);
+                                  toastError(t, `修改名字失败: ${error.toString()}`);
+                                }
                               }}
                             >
                               确认
