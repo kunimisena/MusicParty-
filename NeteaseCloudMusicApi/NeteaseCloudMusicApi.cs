@@ -179,7 +179,6 @@ public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为
         {
             // 如果是 pid 开头形式
             string programId = idInput.Substring(pidPrefix.Length); // 去掉 "pid=" 字符串，保留后面的id内容
-
             // 用 /dj/program/detail?id= 来请求访问结果
             // 注意：DJ节目详情通常不需要 cookie，但如果您的 API 代理需要，则添加
             // var requestUrl = $"{_url}/dj/program/detail?id={programId}&cookie={GetCookieEncoded()}"; 
@@ -193,7 +192,6 @@ public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为
             {
                 throw new Exception($"无法获取DJ节目详情 (pid={programId})，消息: {resp}");
             }
-
             // 提取 "mainTrackId" 来得到 music 对象的 id
             var mainTrackIdNode = j["program"]!["mainTrackId"];
             if (mainTrackIdNode == null)
@@ -201,7 +199,6 @@ public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为
                 throw new Exception($"DJ节目 (pid={programId}) 响应中未找到 'mainTrackId'。响应: {resp}");
             }
             string musicId = mainTrackIdNode.GetValue<long>().ToString(); // mainTrackId 通常是 long 类型
-
             // 提取 program": { "mainSong": {"name": ": 中的内容作为music对象的name
             var songNameNode = j["program"]!["mainSong"]?["name"];
             string name;
