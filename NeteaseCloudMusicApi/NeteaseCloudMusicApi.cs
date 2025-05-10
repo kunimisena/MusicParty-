@@ -171,15 +171,76 @@ public class NeteaseCloudMusicApi : IMusicApi
         return true;
     }
 
-    public async Task<Music> GetMusicByIdAsync(string id)
+public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为 idInput 以区分处理后的 id
     {
-        var resp = await _http.GetStringAsync(_url + $"/song/detail?ids={id}&cookie={GetCookieEncoded()}");
-        var j = JsonNode.Parse(resp)!;
-        if ((int)j["code"]! != 200 || j["songs"]!.AsArray().Count == 0)
-            throw new Exception($"Unable to get music, message: {resp}");
-        var name = (string)j["songs"]![0]!["name"]!;
-        var ar = j["songs"]![0]!["ar"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()).ToArray();
-        return new Music(id, name, ar);
+        const string pidPrefix = "pid=";
+
+        if (idInput != null && idInput.StartsWith(pidPrefix))
+        {
+            // 如果是 pid 开头形式
+            string programId = idInput.Substring(pidPrefix.Length); // 去掉 "pid=" 字符串，保留后面的id内容
+
+            // 用 /dj/program/detail?id= 来请求访问结果
+            // 注意：DJ节目详情通常不需要 cookie，但如果您的 API 代理需要，则添加
+            // var requestUrl = $"{_url}/dj/program/detail?id={programId}&cookie={GetCookieEncoded()}"; 
+            var requestUrl = $"{_url}/dj/program/detail?id={programId}&cookie={GetCookieEncoded()}";
+            
+            var resp = await _http.GetStringAsync(requestUrl);
+            var j = JsonNode.Parse(resp)!;
+
+            // 检查API调用是否成功
+            if (j["code"]?.GetValue<int>() != 200 || j["program"] == null)
+            {
+                throw new Exception($"无法获取DJ节目详情 (pid={programId})，消息: {resp}");
+            }
+
+            // 提取 "mainTrackId" 来得到 music 对象的 id
+            var mainTrackIdNode = j["program"]!["mainTrackId"];
+            if (mainTrackIdNode == null)
+            {
+                throw new Exception($"DJ节目 (pid={programId}) 响应中未找到 'mainTrackId'。响应: {resp}");
+            }
+            string musicId = mainTrackIdNode.GetValue<long>().ToString(); // mainTrackId 通常是 long 类型
+
+            // 提取 program": { "mainSong": {"name": ": 中的内容作为music对象的name
+            var songNameNode = j["program"]!["mainSong"]?["name"];
+            string name;
+            if (songNameNode == null)
+            {
+                name = "未知歌曲";
+            }
+            else
+            {
+                name = songNameNode.GetValue<string>();
+            }
+            // 提取 "artists": [ { "name": 中的内容作为music对象的ar
+            var artistsNode = j["program"]!["mainSong"]?["artists"]?.AsArray();
+            string[] ar;
+            if (artistsNode != null && artistsNode.Count > 0)
+            {
+                ar = artistsNode.Select(x => x!["name"]!.GetValue<string>()).ToArray();
+            }
+            else
+            {
+                // 如果没有艺术家信息，可以提供一个默认值或者抛出异常，根据需求
+                ar = new string[] { "未知艺术家" }; 
+                // 或者: throw new Exception($"DJ节目 (pid={programId}) 响应中未找到 'program.mainSong.artists'。响应: {resp}");
+            }
+            
+            // 返回 music 对象 (使用从 mainTrackId 获取的 musicId)
+            return new Music(musicId, name, ar);
+        }
+        else //直接是id形式，下面不变！不变！不变！
+        {
+            var resp = await _http.GetStringAsync(_url + $"/song/detail?ids={idInput}&cookie={GetCookieEncoded()}");
+            var j = JsonNode.Parse(resp)!;
+            if (j["code"]?.GetValue<int>() != 200 || j["songs"]?.AsArray().Count == 0)
+                throw new Exception($"无法获取音乐 (id={idInput})，消息: {resp}");
+            
+            var name = j["songs"]![0]!["name"]!.GetValue<string>();
+            var ar = j["songs"]![0]!["ar"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()).ToArray();
+            return new Music(idInput, name, ar); // 对于普通歌曲，输入的idInput就是歌曲ID
+        }
     }
 
     public Task<IEnumerable<Music>> SearchMusicByNameAsync(string name)
