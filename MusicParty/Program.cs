@@ -3,19 +3,32 @@ using MusicParty;
 using MusicParty.Hub;
 using MusicParty.MusicApi;
 using MusicParty.MusicApi.Bilibili;
+using MusicParty.MusicApi.KuGouMusic;
 using MusicParty.MusicApi.NeteaseCloudMusic;
 using MusicParty.MusicApi.QQMusic;
-using MusicParty.MusicApi.KuGouMusic;
+// [新增] 引入 System.Text.Json 以使用 JsonNamingPolicy
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
+// [修改] 配置 Controller 的 JSON 序列化选项，使其输出 camelCase 格式
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
+
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddSignalR();
+
+// [修改] 配置 SignalR 的 JSON 序列化选项，使其也输出 camelCase 格式
+builder.Services.AddSignalR().AddJsonProtocol(options =>
+{
+    options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
+
 
 // Add music api
 var musicApiList = new List<IMusicApi>();

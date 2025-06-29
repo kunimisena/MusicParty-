@@ -13,6 +13,24 @@ public class UserManager
         _accessor = accessor;
     }
 
+    public bool HasOnlineUsers()
+    {
+        return _users.Any();
+    }
+
+    // --- 新增方法 开始 ---
+    /// <summary>
+    /// 当用户断开连接时，从用户列表中移除该用户。
+    /// 这个方法将由 MusicHub 在用户断开时调用。
+    /// </summary>
+    /// <param name="id">要移除的用户的ID。</param>
+    public void RemoveUser(string id)
+    {
+        // 使用 RemoveAll 以确保移除所有匹配项，并处理可能的并发问题。
+        _users.RemoveAll(x => x.Id == id);
+    }
+    // --- 新增方法 结束 ---
+
     private void CreateUser(string id, string name)
     {
         _users.Add(new User(id, name, new()));
@@ -35,7 +53,8 @@ public class UserManager
     public async Task LogoutAsync(string id)
     {
         await _accessor.HttpContext!.SignOutAsync("Cookies");
-        _users.RemoveAll(x => x.Id == id);
+        // 调用我们自己的移除方法以保持逻辑统一
+        RemoveUser(id);
     }
 
     public User? FindUserById(string id)

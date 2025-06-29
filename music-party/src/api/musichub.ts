@@ -1,4 +1,20 @@
 import * as sr from "@microsoft/signalr";
+
+export interface HistoryMusic {
+  id: string;
+  name: string;
+  artists: string[];
+}
+
+// [修改] 播放历史条目接口，增加 enqueuerId
+export interface PlayHistoryEntry {
+  music: HistoryMusic;
+  apiName: string;
+  enqueuerId: string;
+  enqueuerName: string;
+  timestamp: string;
+}
+
 export class Connection {
   private _conn: sr.HubConnection;
   constructor(
@@ -19,7 +35,7 @@ export class Connection {
     onlineUserLogin: (id: string, name: string) => void,
     onlineUserLogout: (id: string) => void,
     onlineUserRename: (id: string, newName: string) => void, 
-    newChat: (name: string, content: string, timestamp: number) => void,  // ✅ 增加timestamp参数
+    newChat: (name: string, content: string, timestamp: number) => void,
     globalMessage: (content: string) => void,
     abort: (msg: string) => void
   ) {
@@ -48,6 +64,12 @@ export class Connection {
   public async enqueueMusic(id: string, apiName: string): Promise<void> {
     await this._conn.invoke("EnqueueMusic", id, apiName);
   }
+
+  // [新增] 用于从历史记录重新播放的方法
+  public async replayMusic(musicId: string, apiName: string, originalEnqueuerId: string): Promise<void> {
+    await this._conn.invoke("ReplayMusic", musicId, apiName, originalEnqueuerId);
+  }
+  
   public async requestSetNowPlaying(): Promise<void> {
     await this._conn.invoke("RequestSetNowPlaying");
   }
@@ -76,7 +98,10 @@ export class Connection {
     }>> {
       return await this._conn.invoke("GetChatHistory");
   }
-    
+  
+  public async getPlayHistory(): Promise<PlayHistoryEntry[]> {
+    return await this._conn.invoke("GetPlayHistory");
+  }
 }
 export interface Music {
   url: string;

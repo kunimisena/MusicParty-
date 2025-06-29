@@ -44,6 +44,7 @@ import { QQMusicBinder } from '../src/components/qqmusicbinder';
 import { MusicQueue } from '../src/components/musicqueue';
 import { BilibiliBinder } from '../src/components/bilibilibinder';
 import { KuGouBinder } from '../src/components/kugoubinder';
+import { PlayHistory } from '../src/api/playhistory';
 
 // --- Cookie 辅助函数 ---
 const COOKIE_USERNAME_KEY = 'chat_username_preference'; // 用于存储用户名的 Cookie键
@@ -90,6 +91,7 @@ export default function Home() {
   const [chatContent, setChatContent] = useState<
   { name: string; content: string; timestamp: number }[]
   >([]); // 初始化为空数组
+  const [isConnReady, setIsConnReady] = useState(false);
   const [chatToSend, setChatToSend] = useState('');
   const [apis, setApis] = useState<string[]>([]);
   const t = useToast();
@@ -136,16 +138,16 @@ export default function Home() {
           );
         },
         async (name: string, content: string, timestamp: number) => {
-          // Use functional update to ensure we're working with the latest state
+
           setChatContent(prevChatContent => {
               const newMsg = {
               name,
               content: content.trim(),
               timestamp: timestamp * 1000
             };
-            // Prepend new message and keep only the latest 30
-            return [newMsg, ...prevChatContent].slice(0, 30);
-          }); // ✅ Correctly prepends and handles timestamp
+
+            return [newMsg, ...prevChatContent].slice(0, 100);
+          }); 
         },
         async (content: string) => {
           // todo
@@ -187,6 +189,7 @@ export default function Home() {
             setOnlineUsers(users);
             const chatHistory = await conn.current!.getChatHistory();
             setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
+            setIsConnReady(true); // 连接和初始数据加载全部完成后，设置就绪状态
           } catch (err: any) {
             toastError(t, err);
             try {
@@ -450,6 +453,7 @@ export default function Home() {
             <Tab>播放列表</Tab>
             <Tab>从音乐ID点歌</Tab>
             <Tab>从歌单点歌</Tab>
+            <Tab>播放历史</Tab>
           </TabList>
           <TabPanels>
             <TabPanel>
@@ -511,6 +515,9 @@ export default function Home() {
                   }}
                 />
               )}
+            </TabPanel>
+            <TabPanel>
+              <PlayHistory conn={conn.current} isConnReady={isConnReady} />
             </TabPanel>
           </TabPanels>
         </Tabs>

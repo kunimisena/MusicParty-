@@ -1,18 +1,37 @@
 using Microsoft.AspNetCore.SignalR;
 using MusicParty.Hub;
 using MusicParty.MusicApi;
+using System.Text.Json;
 
 namespace MusicParty;
 
 public class MusicBroadcaster
 {
-    public (PlayableMusic music, string enqueuerId)? NowPlaying { get; private set; }
+    public (PlayableMusic music, string enqueuerId, string apiName, bool IsReplay)? NowPlaying { get; private set; }
     private ToppableQueue<MusicOrderAction> MusicQueue { get; } = new();
     public DateTime NowPlayingStartedTime { get; private set; }
     private readonly IEnumerable<IMusicApi> _apis;
     private readonly IHubContext<MusicHub> _context;
     private readonly UserManager _userManager;
     private readonly ILogger<MusicBroadcaster> _logger;
+
+    private const string RobotEnqueuerId = "auto-dj-robot";
+    private const string RobotEnqueuerName = "自动点歌机器人";
+    private const string _autoplaylistPath = "autoplaylist.json";
+    private List<AutoplaylistItem> _autoplaylist = new();
+    private readonly Random _random = new();
+    private record AutoplaylistItem(string Id, string ApiName);
+
+    private enum AutoDjMode { Inactive, Active }
+    private AutoDjMode _currentAutoDjMode = AutoDjMode.Inactive;
+    private DateTime _lastUserActivityTime = DateTime.Now;
+    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(1);
+    
+    public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
+    private const string _playHistoryPath = "play_history.json";
+    private const int _maxPlayHistoryCount = 100;
+    private readonly LinkedList<PlayHistoryEntry> _playHistory = new();
+    private static readonly object _fileLock = new();
 
     public MusicBroadcaster(IEnumerable<IMusicApi> apis, IHubContext<MusicHub> context, UserManager userManager,
         ILogger<MusicBroadcaster> logger)
@@ -21,13 +40,149 @@ public class MusicBroadcaster
         _context = context;
         _userManager = userManager;
         _logger = logger;
+        
+        LoadAutoplaylist();
+        LoadPlayHistory();
         Task.Run(Loop);
     }
+    
+    private void LoadAutoplaylist()
+    {
+        try
+        {
+            if (File.Exists(_autoplaylistPath))
+            {
+                var jsonString = File.ReadAllText(_autoplaylistPath);
+                var playlist = JsonSerializer.Deserialize<List<AutoplaylistItem>>(jsonString);
+                if (playlist != null && playlist.Any())
+                {
+                    _autoplaylist = playlist;
+                    _logger.LogInformation("成功加载自动播放列表，共 {Count} 首歌曲。", _autoplaylist.Count);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "加载自动播放列表失败。");
+        }
+    }
+
+    private void LoadPlayHistory()
+    {
+        try
+        {
+            if (File.Exists(_playHistoryPath))
+            {
+                var jsonString = File.ReadAllText(_playHistoryPath);
+                var history = JsonSerializer.Deserialize<List<PlayHistoryEntry>>(jsonString);
+                if (history != null)
+                {
+                    foreach (var item in history)
+                    {
+                        _playHistory.AddLast(item);
+                    }
+                    _logger.LogInformation("成功加载播放历史，共 {Count} 条记录。", _playHistory.Count);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "加载播放历史文件失败: {FilePath}", _playHistoryPath);
+        }
+    }
+
+    private async Task SavePlayHistoryAsync()
+    {
+        try
+        {
+            var jsonString = JsonSerializer.Serialize(_playHistory, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(_playHistoryPath, jsonString);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "写入播放历史到文件失败: {FilePath}", _playHistoryPath);
+        }
+    }
+
+    private async Task AddToHistoryAndSaveAsync((PlayableMusic music, string enqueuerId, string apiName, bool IsReplay) playedSong)
+    {
+        if (playedSong.IsReplay || playedSong.enqueuerId == RobotEnqueuerId)
+        {
+            return;
+        }
+
+        var entry = new PlayHistoryEntry(
+            new Music(playedSong.music.Id, playedSong.music.Name, playedSong.music.Artists),
+            playedSong.apiName,
+            playedSong.enqueuerId,
+            GetEnqueuerName(playedSong.enqueuerId),
+            DateTime.UtcNow
+        );
+
+        _playHistory.AddFirst(entry);
+
+        if (_playHistory.Count > _maxPlayHistoryCount)
+        {
+            _playHistory.RemoveLast();
+        }
+
+        await SavePlayHistoryAsync();
+    }
+
 
     private async Task Loop()
     {
         while (true)
         {
+            bool isUserActivityPresent = false;
+            if (NowPlaying?.enqueuerId != null && NowPlaying.Value.enqueuerId != RobotEnqueuerId)
+            {
+                isUserActivityPresent = true;
+            }
+            if (!isUserActivityPresent)
+            {
+                if (MusicQueue.Any(song => song.EnqueuerId != RobotEnqueuerId))
+                {
+                    isUserActivityPresent = true;
+                }
+            }
+
+            if (isUserActivityPresent)
+            {
+                _lastUserActivityTime = DateTime.Now;
+                if (_currentAutoDjMode == AutoDjMode.Active)
+                {
+                    _logger.LogInformation("检测到真人用户歌曲活动，自动DJ切换到 Inactive 状态。");
+                    _currentAutoDjMode = AutoDjMode.Inactive;
+                }
+            }
+            else
+            {
+                if (_userManager.HasOnlineUsers() && (DateTime.Now - _lastUserActivityTime > _userActivityTimeout))
+                {
+                    if (_currentAutoDjMode == AutoDjMode.Inactive)
+                    {
+                        _logger.LogInformation("真人用户无活动超时，自动DJ切换到 Active 状态。");
+                        _currentAutoDjMode = AutoDjMode.Active;
+                    }
+                }
+            }
+            
+            if (!_userManager.HasOnlineUsers() && _currentAutoDjMode == AutoDjMode.Active)
+            {
+                _logger.LogInformation("所有用户已离开，自动DJ切换到 Inactive 状态。");
+                _currentAutoDjMode = AutoDjMode.Inactive;
+            }
+
+            if (_currentAutoDjMode == AutoDjMode.Active)
+            {
+                if (NowPlaying is null && !MusicQueue.Any() && _autoplaylist.Any())
+                {
+                    _logger.LogInformation("自动DJ处于 Active 状态，且房间为空，执行点歌。");
+                    await EnqueueRandomSongFromAutoplaylistAsync();
+                }
+            }
+            
             if (NowPlaying is null)
             {
                 if (MusicQueue.TryDequeue(out var musicOrder))
@@ -41,12 +196,12 @@ public class MusicBroadcaster
                         continue;
                     }
 
-                    for (var i = 0;; i++) // try 3 times before skip.
+                    for (var i = 0;; i++)
                     {
                         try
                         {
                             var music = await ma!.GetPlayableMusicAsync(musicOrder.Music);
-                            NowPlaying = (music, musicOrder.EnqueuerId);
+                            NowPlaying = (music, musicOrder.EnqueuerId, musicOrder.Service, musicOrder.IsReplay);
                             if (music.NeedProxy)
                             {
                                 await MusicProxyMiddleware.StartProxyAsync(new MusicProxyRequest(music.TargetUrl!,
@@ -55,13 +210,12 @@ public class MusicBroadcaster
                             }
 
                             NowPlayingStartedTime = DateTime.Now;
-                            await SetNowPlaying(NowPlaying.Value.music,
-                                _userManager.FindUserById(musicOrder.EnqueuerId)!.Name);
+                            await SetNowPlaying(NowPlaying.Value.music, GetEnqueuerName(musicOrder.EnqueuerId));
                             break;
                         }
                         catch (Exception ex)
                         {
-                            if (i >= 2) // failed 3 times, skip.
+                            if (i >= 2)
                             {
                                 _logger.LogError(ex, "{MusicId} with {Api} play failed, skipping...",
                                     musicOrder.Music.Id, musicOrder.Service);
@@ -74,9 +228,9 @@ public class MusicBroadcaster
             }
             else
             {
-                if ((DateTime.Now - NowPlayingStartedTime).TotalMilliseconds >=
-                    NowPlaying.Value.music.Length) // play is over
+                if ((DateTime.Now - NowPlayingStartedTime).TotalMilliseconds >= NowPlaying.Value.music.Length)
                 {
+                    await AddToHistoryAndSaveAsync(NowPlaying.Value);
                     NowPlaying = null;
                 }
             }
@@ -84,19 +238,51 @@ public class MusicBroadcaster
             await Task.Delay(1000);
         }
     }
+    
+    private async Task EnqueueRandomSongFromAutoplaylistAsync()
+    {
+        if (!_autoplaylist.Any()) return;
+        var randomSongItem = _autoplaylist[_random.Next(_autoplaylist.Count)];
+        try
+        {
+            if (!_apis.TryGetMusicApi(randomSongItem.ApiName, out var ma)) return;
+            var music = await ma.GetMusicByIdAsync(randomSongItem.Id);
+            await EnqueueMusic(music, randomSongItem.ApiName, RobotEnqueuerId, isReplay: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "自动点歌失败，歌曲ID: {SongId}, API: {ApiName}", randomSongItem.Id, randomSongItem.ApiName);
+        }
+    }
+    
+    private string GetEnqueuerName(string enqueuerId)
+    {
+        if (enqueuerId == RobotEnqueuerId) return RobotEnqueuerName;
+        return _userManager.FindUserById(enqueuerId)?.Name ?? "未知用户";
+    }
 
+    public IEnumerable<PlayHistoryEntry> GetPlayHistory() => _playHistory;
+
+    // [错误修复] 新增一个公共方法来获取播放队列
     public IEnumerable<MusicOrderAction> GetQueue() => MusicQueue;
 
-    public async Task EnqueueMusic(Music music, string apiName, string enqueuerId)
+    public async Task EnqueueMusic(Music music, string apiName, string enqueuerId, bool isReplay = false)
     {
-        var action = new MusicOrderAction(Guid.NewGuid().ToString()[..8], music, apiName, enqueuerId);
+        if (!isReplay && enqueuerId != RobotEnqueuerId)
+        {
+            _lastUserActivityTime = DateTime.Now;
+        }
+
+        var action = new MusicOrderAction(Guid.NewGuid().ToString()[..8], music, apiName, enqueuerId, isReplay);
         MusicQueue.Enqueue(action);
-        await MusicEnqueued(action.ActionId, music, _userManager.FindUserById(enqueuerId)!.Name);
+        await MusicEnqueued(action.ActionId, music, GetEnqueuerName(enqueuerId));
     }
 
     public async Task NextSong(string operatorId)
     {
         if (NowPlaying is null) return;
+        
+        await AddToHistoryAndSaveAsync(NowPlaying.Value);
         await MusicCut(operatorId, NowPlaying.Value.music);
         NowPlaying = null;
     }
@@ -109,8 +295,7 @@ public class MusicBroadcaster
 
     private async Task SetNowPlaying(PlayableMusic music, string enqueuerName)
     {
-        await _context.Clients.All.SendAsync(nameof(SetNowPlaying), music, enqueuerName,
-            0); // arg3 is music already played time
+        await _context.Clients.All.SendAsync(nameof(SetNowPlaying), music, enqueuerName, 0);
     }
 
     private async Task MusicEnqueued(string actionId, Music music, string enqueuerName)
@@ -138,17 +323,19 @@ public class MusicBroadcaster
         await _context.Clients.All.SendAsync(nameof(GlobalMessage), content);
     }
 
-    public record MusicOrderAction(string ActionId, Music Music, string Service, string EnqueuerId);
+    public record MusicOrderAction(string ActionId, Music Music, string Service, string EnqueuerId, bool IsReplay = false);
 
+    // [错误修复] 将这个内部类设为 private，因为它只在 MusicBroadcaster 内部使用
     private class ToppableQueue<T> : LinkedList<T>
     {
         public void TopItem(Func<T, bool> pred)
         {
-            if (Count == 1)
-                return;
-            var node = Find(this.First(pred))!; // if count == 0, this will throw an exception.
+            if (Count < 2) return;
+            var item = this.FirstOrDefault(pred);
+            if (item is null) return;
+            var node = Find(item)!;
             Remove(node);
-            AddBefore(First!, node);
+            AddFirst(node);
         }
 
         public void Enqueue(T item)

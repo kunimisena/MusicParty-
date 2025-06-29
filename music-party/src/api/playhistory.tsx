@@ -1,0 +1,106 @@
+import {
+  Box,
+  Button,
+  Flex,
+  List,
+  ListItem,
+  Stack,
+  Text,
+  useToast,
+  Divider,
+  Skeleton
+} from '@chakra-ui/react';
+import React, { useEffect, useState } from 'react';
+import { Connection, PlayHistoryEntry } from '../api/musichub';
+import { toastEnqueueOk, toastError } from '../utils/toast';
+
+interface PlayHistoryProps {
+  conn?: Connection;
+  isConnReady: boolean;
+}
+
+export const PlayHistory = (props: PlayHistoryProps) => {
+  const { conn, isConnReady } = props;
+  const [history, setHistory] = useState<PlayHistoryEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const t = useToast();
+
+  useEffect(() => {
+    if (!isConnReady || !conn) {
+      return;
+    }
+
+    conn.getPlayHistory()
+      .then(data => {
+        setHistory(data);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.error("获取播放历史失败:", err);
+        toastError(t, "获取播放历史失败，请刷新页面重试。");
+        setIsLoading(false);
+      });
+  }, [conn, isConnReady, t]);
+
+  // [修改] handleReplay 函数现在接收 enqueuerId
+  const handleReplay = (id: string, apiName: string, enqueuerId: string) => {
+    if (!conn) return;
+
+    // [修改] 调用新的 replayMusic 方法
+    conn.replayMusic(id, apiName, enqueuerId)
+      .then(() => {
+        toastEnqueueOk(t);
+      })
+      .catch((e) => {
+        toastError(t, `歌曲 (ID: ${id}) 加入队列失败`);
+        console.error(e);
+      });
+  };
+
+  return (
+    <Stack spacing={4} mt={4}>
+      <Text fontSize="2xl" fontWeight="bold">播放历史</Text>
+      <Divider />
+      <Box
+        borderWidth="1px"
+        borderRadius="lg"
+        p={4}
+        maxH={{ base: '60vh', md: '70vh' }}
+        overflowY="auto"
+      >
+        <Skeleton isLoaded={!isLoading}>
+          {history.length > 0 ? (
+            <List spacing={3}>
+              {history.map((entry, index) => (
+                <ListItem key={`${entry.music.id}-${entry.timestamp}-${index}`}>
+                  <Flex 
+                    justifyContent="space-between" 
+                    alignItems="center"
+                    direction={{ base: 'column', md: 'row' }} 
+                  >
+                    <Box flex={1} mb={{ base: 2, md: 0 }}>
+                      <Text fontWeight="bold" fontSize="lg">{entry.music.name}</Text>
+                      <Text fontSize="md" color="gray.500">{entry.music.artists.join(' / ')}</Text>
+                      <Text fontSize="sm" fontStyle="italic">由 {entry.enqueuerName} 点播</Text>
+                    </Box>
+                    <Button
+                      colorScheme="teal"
+                      variant="outline"
+                      size="sm"
+                      // [修改] 调用 handleReplay 时传入 enqueuerId
+                      onClick={() => handleReplay(entry.music.id, entry.apiName, entry.enqueuerId)}
+                    >
+                      重新播放
+                    </Button>
+                  </Flex>
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Text>还没有播放历史哦，快去点歌吧！</Text>
+          )}
+        </Skeleton>
+      </Box>
+    </Stack>
+  );
+};
