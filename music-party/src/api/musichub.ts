@@ -6,7 +6,7 @@ export interface HistoryMusic {
   artists: string[];
 }
 
-// [修改] 播放历史条目接口，增加 enqueuerId
+// 播放历史条目接口，保持不变
 export interface PlayHistoryEntry {
   music: HistoryMusic;
   apiName: string;
@@ -65,9 +65,10 @@ export class Connection {
     await this._conn.invoke("EnqueueMusic", id, apiName);
   }
 
-  // [新增] 用于从历史记录重新播放的方法
-  public async replayMusic(musicId: string, apiName: string, originalEnqueuerId: string): Promise<void> {
-    await this._conn.invoke("ReplayMusic", musicId, apiName, originalEnqueuerId);
+  // [修改] replayMusic 方法现在接收一个 HistoryMusic 对象和 apiName
+  public async replayMusic(music: HistoryMusic, apiName: string): Promise<void> {
+    // [修改] 调用后端的 ReplayMusic，传递 music 对象和 apiName
+    await this._conn.invoke("ReplayMusic", music, apiName);
   }
   
   public async requestSetNowPlaying(): Promise<void> {

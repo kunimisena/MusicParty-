@@ -11,7 +11,8 @@ import {
   Skeleton
 } from '@chakra-ui/react';
 import React, { useEffect, useState } from 'react';
-import { Connection, PlayHistoryEntry } from '../api/musichub';
+// [修改] 导入 HistoryMusic 类型
+import { Connection, HistoryMusic, PlayHistoryEntry } from '../api/musichub';
 import { toastEnqueueOk, toastError } from '../utils/toast';
 
 interface PlayHistoryProps {
@@ -42,17 +43,18 @@ export const PlayHistory = (props: PlayHistoryProps) => {
       });
   }, [conn, isConnReady, t]);
 
-  // [修改] handleReplay 函数现在接收 enqueuerId
-  const handleReplay = (id: string, apiName: string, enqueuerId: string) => {
+  // [修改] handleReplay 函数现在接收 music 对象和 apiName
+  const handleReplay = (music: HistoryMusic, apiName: string) => {
     if (!conn) return;
 
-    // [修改] 调用新的 replayMusic 方法
-    conn.replayMusic(id, apiName, enqueuerId)
+    // [修改] 调用新的 replayMusic 方法，传递整个 music 对象
+    conn.replayMusic(music, apiName)
       .then(() => {
         toastEnqueueOk(t);
       })
       .catch((e) => {
-        toastError(t, `歌曲 (ID: ${id}) 加入队列失败`);
+        // [修改] 错误提示中使用 music.name
+        toastError(t, `歌曲 (${music.name}) 加入队列失败`);
         console.error(e);
       });
   };
@@ -87,8 +89,8 @@ export const PlayHistory = (props: PlayHistoryProps) => {
                       colorScheme="teal"
                       variant="outline"
                       size="sm"
-                      // [修改] 调用 handleReplay 时传入 enqueuerId
-                      onClick={() => handleReplay(entry.music.id, entry.apiName, entry.enqueuerId)}
+                      // [修改] 调用 handleReplay 时传入 entry.music 和 entry.apiName
+                      onClick={() => handleReplay(entry.music, entry.apiName)}
                     >
                       重新播放
                     </Button>

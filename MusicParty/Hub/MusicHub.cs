@@ -120,8 +120,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         await OnlineUserLogin(Clients.Others, Context.User.Identity.Name!);
         
         if (_musicBroadcaster.NowPlaying is not null) {
-            var (music, enqueuerId, _, isReplay) = _musicBroadcaster.NowPlaying.Value;
-            await SetNowPlaying(Clients.Caller, music, GetEnqueuerName(enqueuerId),
+            var (music, _, enqueuerName, _, _) = _musicBroadcaster.NowPlaying.Value;
+            await SetNowPlaying(Clients.Caller, music, enqueuerName,
                 (int)(DateTime.Now - _musicBroadcaster.NowPlayingStartedTime).TotalSeconds);
         }
     }
@@ -158,36 +158,38 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             throw new HubException($"Failed to enqueue music, id: {id}", ex);
         }
     }
-
-    public async Task ReplayMusic(string musicId, string apiName, string originalEnqueuerId)
+    
+    // [修改] ReplayMusic 方法现在接收一个 Music 对象和 apiName
+    public async Task ReplayMusic(Music music, string apiName)
     {
-        if (!_musicApis.TryGetMusicApi(apiName, out var ma))
+        // 验证 apiName 仍然是必要的
+        if (!_musicApis.TryGetMusicApi(apiName, out _))
             throw new HubException($"Unknown api provider {apiName}.");
-        
-        var originalEnqueuer = _userManager.FindUserById(originalEnqueuerId);
-        if (originalEnqueuer == null && originalEnqueuerId != RobotEnqueuerId)
-        {
-            _logger.LogWarning("Replay attempt with an unknown original enqueuer ID: {originalEnqueuerId}", originalEnqueuerId);
-            throw new HubException("Invalid original enqueuer.");
-        }
 
         try
         {
-            var music = await ma!.GetMusicByIdAsync(musicId);
-            await _musicBroadcaster.EnqueueMusic(music, apiName, originalEnqueuerId, isReplay: true);
+            // [修改] music 对象已由前端提供，无需再通过 GetMusicByIdAsync 获取
+            
+            // 将点歌者明确指定为当前发起请求的用户
+            var currentUserId = Context.User!.Identity!.Name!;
+            
+            // 调用点歌方法，使用前端传递的 music 对象，将当前用户作为点歌者，并标记 isReplay: true
+            await _musicBroadcaster.EnqueueMusic(music, apiName, currentUserId, isReplay: true);
         }
         catch (Exception ex)
         {
-            throw new HubException($"Failed to replay music, id: {musicId}", ex);
+            // 如果点歌过程（比如获取可播放URL）中发生任何错误，将向客户端抛出异常
+            throw new HubException($"Failed to replay music, name: {music.Name}", ex);
         }
     }
+
 
     public async Task RequestSetNowPlaying()
     {
         if (_musicBroadcaster.NowPlaying is null) return;
-        var (music, enqueuerId, _, isReplay) = _musicBroadcaster.NowPlaying.Value;
+        var (music, _, enqueuerName, _, _) = _musicBroadcaster.NowPlaying.Value;
         
-        await SetNowPlaying(Clients.Caller, music, GetEnqueuerName(enqueuerId),
+        await SetNowPlaying(Clients.Caller, music, enqueuerName,
             (int)(DateTime.Now - _musicBroadcaster.NowPlayingStartedTime).TotalSeconds);
     }
 
@@ -200,9 +202,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
     public IEnumerable<MusicEnqueueOrder> GetMusicQueue()
     {
-        // [错误修复] 调用 MusicBroadcaster 的公共 GetQueue() 方法
         return _musicBroadcaster.GetQueue().Select(x =>
-            new MusicEnqueueOrder(x.ActionId, x.Music, GetEnqueuerName(x.EnqueuerId))).ToList();
+            new MusicEnqueueOrder(x.ActionId, x.Music, x.EnqueuerName)).ToList();
     }
 
     public async Task NextSong()

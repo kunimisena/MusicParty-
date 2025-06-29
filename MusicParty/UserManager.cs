@@ -18,22 +18,20 @@ public class UserManager
         return _users.Any();
     }
 
-    // --- 新增方法 开始 ---
-    /// <summary>
-    /// 当用户断开连接时，从用户列表中移除该用户。
-    /// 这个方法将由 MusicHub 在用户断开时调用。
-    /// </summary>
-    /// <param name="id">要移除的用户的ID。</param>
     public void RemoveUser(string id)
     {
-        // 使用 RemoveAll 以确保移除所有匹配项，并处理可能的并发问题。
         _users.RemoveAll(x => x.Id == id);
     }
-    // --- 新增方法 结束 ---
 
-    private void CreateUser(string id, string name)
+    // [修改] 将 CreateUser 方法改为 public，以便其他地方可以安全地调用
+    public void CreateUser(string id, string name)
     {
-        _users.Add(new User(id, name, new()));
+        // [新增] 在创建用户前，先检查用户是否已存在，防止重复添加。
+        // 这样即使有多个并发请求，也只有一个会成功添加用户。
+        if (FindUserById(id) is null)
+        {
+            _users.Add(new User(id, name, new()));
+        }
     }
 
     public async Task LoginAsync(string id)
@@ -53,7 +51,6 @@ public class UserManager
     public async Task LogoutAsync(string id)
     {
         await _accessor.HttpContext!.SignOutAsync("Cookies");
-        // 调用我们自己的移除方法以保持逻辑统一
         RemoveUser(id);
     }
 

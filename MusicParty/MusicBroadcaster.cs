@@ -7,7 +7,7 @@ namespace MusicParty;
 
 public class MusicBroadcaster
 {
-    public (PlayableMusic music, string enqueuerId, string apiName, bool IsReplay)? NowPlaying { get; private set; }
+    public (PlayableMusic music, string enqueuerId, string enqueuerName, string apiName, bool IsReplay)? NowPlaying { get; private set; }
     private ToppableQueue<MusicOrderAction> MusicQueue { get; } = new();
     public DateTime NowPlayingStartedTime { get; private set; }
     private readonly IEnumerable<IMusicApi> _apis;
@@ -25,7 +25,7 @@ public class MusicBroadcaster
     private enum AutoDjMode { Inactive, Active }
     private AutoDjMode _currentAutoDjMode = AutoDjMode.Inactive;
     private DateTime _lastUserActivityTime = DateTime.Now;
-    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(5);
+    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromSeconds(5);
     
     public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
     private const string _playHistoryPath = "play_history.json";
@@ -103,8 +103,8 @@ public class MusicBroadcaster
             _logger.LogError(ex, "写入播放历史到文件失败: {FilePath}", _playHistoryPath);
         }
     }
-
-    private async Task AddToHistoryAndSaveAsync((PlayableMusic music, string enqueuerId, string apiName, bool IsReplay) playedSong)
+    
+    private async Task AddToHistoryAndSaveAsync((PlayableMusic music, string enqueuerId, string enqueuerName, string apiName, bool IsReplay) playedSong)
     {
         if (playedSong.IsReplay || playedSong.enqueuerId == RobotEnqueuerId)
         {
@@ -115,7 +115,7 @@ public class MusicBroadcaster
             new Music(playedSong.music.Id, playedSong.music.Name, playedSong.music.Artists),
             playedSong.apiName,
             playedSong.enqueuerId,
-            GetEnqueuerName(playedSong.enqueuerId),
+            playedSong.enqueuerName,
             DateTime.UtcNow
         );
 
@@ -134,46 +134,52 @@ public class MusicBroadcaster
     {
         while (true)
         {
-            bool isUserActivityPresent = false;
-            if (NowPlaying?.enqueuerId != null && NowPlaying.Value.enqueuerId != RobotEnqueuerId)
+            // [核心修改] 将无人在线的判断作为最高优先级
+            if (!_userManager.HasOnlineUsers())
             {
-                isUserActivityPresent = true;
-            }
-            if (!isUserActivityPresent)
-            {
-                if (MusicQueue.Any(song => song.EnqueuerId != RobotEnqueuerId))
-                {
-                    isUserActivityPresent = true;
-                }
-            }
-
-            if (isUserActivityPresent)
-            {
-                _lastUserActivityTime = DateTime.Now;
                 if (_currentAutoDjMode == AutoDjMode.Active)
                 {
-                    _logger.LogInformation("检测到真人用户歌曲活动，自动DJ切换到 Inactive 状态。");
+                    _logger.LogInformation("所有用户已离开，自动DJ切换到 Inactive 状态。");
                     _currentAutoDjMode = AutoDjMode.Inactive;
                 }
             }
-            else
+            else // 只有当有用户在线时，才执行下面的机器人启动逻辑
             {
-                if (_userManager.HasOnlineUsers() && (DateTime.Now - _lastUserActivityTime > _userActivityTimeout))
+                bool isUserActivityPresent = false;
+                if (NowPlaying?.enqueuerId != null && NowPlaying.Value.enqueuerId != RobotEnqueuerId)
                 {
-                    if (_currentAutoDjMode == AutoDjMode.Inactive)
+                    isUserActivityPresent = true;
+                }
+                if (!isUserActivityPresent)
+                {
+                    if (MusicQueue.Any(song => song.EnqueuerId != RobotEnqueuerId))
                     {
-                        _logger.LogInformation("真人用户无活动超时，自动DJ切换到 Active 状态。");
-                        _currentAutoDjMode = AutoDjMode.Active;
+                        isUserActivityPresent = true;
+                    }
+                }
+
+                if (isUserActivityPresent)
+                {
+                    _lastUserActivityTime = DateTime.Now;
+                    if (_currentAutoDjMode == AutoDjMode.Active)
+                    {
+                        _logger.LogInformation("检测到真人用户歌曲活动，自动DJ切换到 Inactive 状态。");
+                        _currentAutoDjMode = AutoDjMode.Inactive;
+                    }
+                }
+                else
+                {
+                    if (DateTime.Now - _lastUserActivityTime > _userActivityTimeout)
+                    {
+                        if (_currentAutoDjMode == AutoDjMode.Inactive)
+                        {
+                            _logger.LogInformation("真人用户无活动超时，自动DJ切换到 Active 状态。");
+                            _currentAutoDjMode = AutoDjMode.Active;
+                        }
                     }
                 }
             }
             
-            if (!_userManager.HasOnlineUsers() && _currentAutoDjMode == AutoDjMode.Active)
-            {
-                _logger.LogInformation("所有用户已离开，自动DJ切换到 Inactive 状态。");
-                _currentAutoDjMode = AutoDjMode.Inactive;
-            }
-
             if (_currentAutoDjMode == AutoDjMode.Active)
             {
                 if (NowPlaying is null && !MusicQueue.Any() && _autoplaylist.Any())
@@ -201,7 +207,7 @@ public class MusicBroadcaster
                         try
                         {
                             var music = await ma!.GetPlayableMusicAsync(musicOrder.Music);
-                            NowPlaying = (music, musicOrder.EnqueuerId, musicOrder.Service, musicOrder.IsReplay);
+                            NowPlaying = (music, musicOrder.EnqueuerId, musicOrder.EnqueuerName, musicOrder.Service, musicOrder.IsReplay);
                             if (music.NeedProxy)
                             {
                                 await MusicProxyMiddleware.StartProxyAsync(new MusicProxyRequest(music.TargetUrl!,
@@ -210,7 +216,7 @@ public class MusicBroadcaster
                             }
 
                             NowPlayingStartedTime = DateTime.Now;
-                            await SetNowPlaying(NowPlaying.Value.music, GetEnqueuerName(musicOrder.EnqueuerId));
+                            await SetNowPlaying(NowPlaying.Value.music, musicOrder.EnqueuerName);
                             break;
                         }
                         catch (Exception ex)
@@ -263,9 +269,7 @@ public class MusicBroadcaster
 
     public IEnumerable<PlayHistoryEntry> GetPlayHistory() => _playHistory;
 
-    // [错误修复] 新增一个公共方法来获取播放队列
     public IEnumerable<MusicOrderAction> GetQueue() => MusicQueue;
-
     public async Task EnqueueMusic(Music music, string apiName, string enqueuerId, bool isReplay = false)
     {
         if (!isReplay && enqueuerId != RobotEnqueuerId)
@@ -273,9 +277,11 @@ public class MusicBroadcaster
             _lastUserActivityTime = DateTime.Now;
         }
 
-        var action = new MusicOrderAction(Guid.NewGuid().ToString()[..8], music, apiName, enqueuerId, isReplay);
+        var enqueuerName = GetEnqueuerName(enqueuerId);
+        var action = new MusicOrderAction(Guid.NewGuid().ToString()[..8], music, apiName, enqueuerId, enqueuerName, isReplay);
+        
         MusicQueue.Enqueue(action);
-        await MusicEnqueued(action.ActionId, music, GetEnqueuerName(enqueuerId));
+        await MusicEnqueued(action.ActionId, music, action.EnqueuerName);
     }
 
     public async Task NextSong(string operatorId)
@@ -323,9 +329,8 @@ public class MusicBroadcaster
         await _context.Clients.All.SendAsync(nameof(GlobalMessage), content);
     }
 
-    public record MusicOrderAction(string ActionId, Music Music, string Service, string EnqueuerId, bool IsReplay = false);
-
-    // [错误修复] 将这个内部类设为 private，因为它只在 MusicBroadcaster 内部使用
+    public record MusicOrderAction(string ActionId, Music Music, string Service, string EnqueuerId, string EnqueuerName, bool IsReplay = false);
+    
     private class ToppableQueue<T> : LinkedList<T>
     {
         public void TopItem(Func<T, bool> pred)
