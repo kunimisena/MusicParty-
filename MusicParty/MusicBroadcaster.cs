@@ -25,7 +25,7 @@ public class MusicBroadcaster
     private enum AutoDjMode { Inactive, Active }
     private AutoDjMode _currentAutoDjMode = AutoDjMode.Inactive;
     private DateTime _lastUserActivityTime = DateTime.Now;
-    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(1);
+    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(5);
     
     public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
     private const string _playHistoryPath = "play_history.json";
