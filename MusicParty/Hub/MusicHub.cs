@@ -117,6 +117,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         }
 
         OnlineUsers.Add(Context.User.Identity.Name!);
+        // [修改] 用户连接时，立即更新一次心跳，确保用户被视为活跃
+        _userManager.UpdateUserHeartbeat(Context.User.Identity.Name!);
         await OnlineUserLogin(Clients.Others, Context.User.Identity.Name!);
         
         if (_musicBroadcaster.NowPlaying is not null) {
@@ -137,13 +139,27 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         var userId = Context.User?.Identity?.Name;
         if (!string.IsNullOrEmpty(userId))
         {
+            // [修改] MusicHub只负责管理HashSet，真正的用户列表由心跳机制管理
             OnlineUsers.Remove(userId);
-            _userManager.RemoveUser(userId);
+            // 注意：我们依然可以保留这里的RemoveUser，它能快速清理正常断开的用户
+            // 但即使它失败了，心跳的“大扫除”机制也会最终清理掉这个用户
+            _userManager.RemoveUser(userId); 
             await OnlineUserLogout(userId);
         }
     }
 
     #region Remote invokable
+    
+    // [新增] 用于接收前端心跳的方法
+    public void Heartbeat()
+    {
+        var userId = Context.User?.Identity?.Name;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            _userManager.UpdateUserHeartbeat(userId);
+        }
+    }
+
     public async Task EnqueueMusic(string id, string apiName)
     {
         if (!_musicApis.TryGetMusicApi(apiName, out var ma))
@@ -159,26 +175,18 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         }
     }
     
-    // [修改] ReplayMusic 方法现在接收一个 Music 对象和 apiName
     public async Task ReplayMusic(Music music, string apiName)
     {
-        // 验证 apiName 仍然是必要的
         if (!_musicApis.TryGetMusicApi(apiName, out _))
             throw new HubException($"Unknown api provider {apiName}.");
 
         try
         {
-            // [修改] music 对象已由前端提供，无需再通过 GetMusicByIdAsync 获取
-            
-            // 将点歌者明确指定为当前发起请求的用户
             var currentUserId = Context.User!.Identity!.Name!;
-            
-            // 调用点歌方法，使用前端传递的 music 对象，将当前用户作为点歌者，并标记 isReplay: true
             await _musicBroadcaster.EnqueueMusic(music, apiName, currentUserId, isReplay: true);
         }
         catch (Exception ex)
         {
-            // 如果点歌过程（比如获取可播放URL）中发生任何错误，将向客户端抛出异常
             throw new HubException($"Failed to replay music, name: {music.Name}", ex);
         }
     }
@@ -226,6 +234,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
     public IEnumerable<User> GetOnlineUsers()
     {
+        // [修改] GetOnlineUsers现在也只应从 UserManager 获取数据，以保持一致
+        // 但为了最小化改动，暂不修改。心跳机制会保证UserManager的数据最终准确。
         return OnlineUsers.Select(id => _userManager.FindUserById(id))
                           .Where(user => user != null)
                           .Select(user => new User(user!.Id, user.Name))

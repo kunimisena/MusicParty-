@@ -236,7 +236,25 @@ export default function Home() {
       document.head.appendChild(style);
     }
   }, []);
+ // +++ 新增下面的整个 useEffect 代码块 +++
+ useEffect(() => {
+   // 确保 SignalR 连接已经完全就绪
+   if (!isConnReady || !conn.current) {
+     return;
+   }
 
+   // 设置一个定时器，每隔 60 秒（1分钟）发送一次心跳
+   const heartbeatInterval = setInterval(() => {
+     console.log("Sending heartbeat..."); // 这行日志可以帮助你调试
+     conn.current?.heartbeat();
+   }, 60000); 
+
+   // 关键的清理步骤：当组件被卸载（比如用户离开页面）时，
+   // 清除这个定时器，防止内存泄漏。
+   return () => {
+     clearInterval(heartbeatInterval);
+   };
+ }, [isConnReady]); // 这个 effect 只在 isConnReady 状态变化时运行一次
   return (
     <Grid 
   templateAreas={{

@@ -64,7 +64,11 @@ export class Connection {
   public async enqueueMusic(id: string, apiName: string): Promise<void> {
     await this._conn.invoke("EnqueueMusic", id, apiName);
   }
-
+  // +++ 新增下面的 heartbeat 方法 +++
+  public async heartbeat(): Promise<void> {
+    // 这个方法不需要任何参数，它只是简单地调用后端的 "Heartbeat" 方法
+    await this._conn.invoke("Heartbeat");
+  }
   // [修改] replayMusic 方法现在接收一个 HistoryMusic 对象和 apiName
   public async replayMusic(music: HistoryMusic, apiName: string): Promise<void> {
     // [修改] 调用后端的 ReplayMusic，传递 music 对象和 apiName

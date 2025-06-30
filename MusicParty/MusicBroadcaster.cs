@@ -25,7 +25,12 @@ public class MusicBroadcaster
     private enum AutoDjMode { Inactive, Active }
     private AutoDjMode _currentAutoDjMode = AutoDjMode.Inactive;
     private DateTime _lastUserActivityTime = DateTime.Now;
-    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(5);
+    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(3); // 恢复为2分钟
+    
+    // [新增] 用于控制大扫除频率的变量
+    private DateTime _lastSweepTime = DateTime.UtcNow;
+    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(1); // 每分钟进行一次大扫除
+
     public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
     private const string _playHistoryPath = "play_history.json";
     private const int _maxPlayHistoryCount = 100;
@@ -133,7 +138,22 @@ public class MusicBroadcaster
     {
         while (true)
         {
-            // [核心修改] 将无人在线的判断作为最高优先级
+            // [新增] 定时大扫除逻辑
+            if (DateTime.UtcNow - _lastSweepTime > _sweepInterval)
+            {
+                var clearedUserIds = _userManager.ClearInactiveUsers();
+                if (clearedUserIds.Any())
+                {
+                    _logger.LogInformation("清理了 {Count} 个掉线的用户。", clearedUserIds.Count);
+                    foreach (var userId in clearedUserIds)
+                    {
+                        await _context.Clients.All.SendAsync("OnlineUserLogout", userId);
+                    }
+                }
+                _lastSweepTime = DateTime.UtcNow;
+            }
+
+            // --- 原有的机器人逻辑 ---
             if (!_userManager.HasOnlineUsers())
             {
                 if (_currentAutoDjMode == AutoDjMode.Active)
@@ -142,7 +162,7 @@ public class MusicBroadcaster
                     _currentAutoDjMode = AutoDjMode.Inactive;
                 }
             }
-            else // 只有当有用户在线时，才执行下面的机器人启动逻辑
+            else
             {
                 bool isUserActivityPresent = false;
                 if (NowPlaying?.enqueuerId != null && NowPlaying.Value.enqueuerId != RobotEnqueuerId)
@@ -179,6 +199,7 @@ public class MusicBroadcaster
                 }
             }
             
+            // --- 原有的播放逻辑 ---
             if (_currentAutoDjMode == AutoDjMode.Active)
             {
                 if (NowPlaying is null && !MusicQueue.Any() && _autoplaylist.Any())
@@ -187,7 +208,7 @@ public class MusicBroadcaster
                     await EnqueueRandomSongFromAutoplaylistAsync();
                 }
             }
-            
+
             if (NowPlaying is null)
             {
                 if (MusicQueue.TryDequeue(out var musicOrder))
@@ -201,7 +222,7 @@ public class MusicBroadcaster
                         continue;
                     }
 
-                    for (var i = 0;; i++)
+                    for (var i = 0; ; i++)
                     {
                         try
                         {
