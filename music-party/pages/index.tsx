@@ -31,6 +31,7 @@ import {
   Portal,
   UnorderedList,
   Flex,
+  Spacer,
   Highlight,
   Box,
 } from '@chakra-ui/react';
@@ -91,6 +92,8 @@ export default function Home() {
   const [chatContent, setChatContent] = useState<
   { name: string; content: string; timestamp: number }[]
   >([]); // 初始化为空数组
+  // [新增] 机器人状态
+  const [isAutoDjDisabled, setIsAutoDjDisabled] = useState(false);
   const [isConnReady, setIsConnReady] = useState(false);
   const [chatToSend, setChatToSend] = useState('');
   const [apis, setApis] = useState<string[]>([]);
@@ -152,6 +155,11 @@ export default function Home() {
         async (content: string) => {
           // todo
           console.log(content);
+          },
+        // [新增] 机器人状态变更处理器
+        (isDisabled: boolean) => {
+          setIsAutoDjDisabled(isDisabled);
+          toastInfo(t, `自动点歌机器人已${isDisabled ? '禁用' : '启用'}`);
         },
         async (msg: string) => {
           console.error(msg);
@@ -189,6 +197,8 @@ export default function Home() {
             setOnlineUsers(users);
             const chatHistory = await conn.current!.getChatHistory();
             setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
+            const autoDjStatus = await conn.current!.getAutoDjStatus();
+            setIsAutoDjDisabled(autoDjStatus);
             setIsConnReady(true); // 连接和初始数据加载全部完成后，设置就绪状态
           } catch (err: any) {
             toastError(t, err);
@@ -364,6 +374,30 @@ export default function Home() {
                     </>
                   )}
                 </Popover>
+                +                {/* [新增] 自动点歌机器人控制按钮 */}
+                <Flex
+                  alignItems="center"
+                  p={2}
+                  borderWidth="1px"
+                  borderRadius="md"
+                  borderColor="gray.200"
+                >
+                  <Button
+                    colorScheme={isAutoDjDisabled ? 'green' : 'orange'}
+                    onClick={() => {
+                      if (isAutoDjDisabled) {
+                        conn.current?.enableAutoDj();
+                      } else {
+                        conn.current?.disableAutoDj();
+                      }
+                    }}
+                  >
+                    {isAutoDjDisabled ? '启用点歌机器人' : '禁用点歌机器人'}
+                  </Button>
+                  <Text ml={3} fontSize="sm" color="gray.600">
+                    (当前状态: {isAutoDjDisabled ? '已禁用' : '已启用'})
+                  </Text>
+                </Flex>
                 {apis.includes('NeteaseCloudMusic') && <NeteaseBinder />}
                 {apis.includes('QQMusic') && <QQMusicBinder />}
                 {apis.includes('Bilibili') && <BilibiliBinder />}

@@ -37,6 +37,8 @@ export class Connection {
     onlineUserRename: (id: string, newName: string) => void, 
     newChat: (name: string, content: string, timestamp: number) => void,
     globalMessage: (content: string) => void,
+    // [新增] 接收机器人状态变更的处理器
+    autoDjStatusChanged: (isDisabled: boolean) => void,
     abort: (msg: string) => void
   ) {
     this._conn = new sr.HubConnectionBuilder().withUrl(url).build();
@@ -50,6 +52,8 @@ export class Connection {
     this._conn.on("OnlineUserRename", onlineUserRename);
     this._conn.on("NewChat", newChat);
     this._conn.on("GlobalMessage", globalMessage);
+    // [新增] 监听机器人状态变更事件
+    this._conn.on("AutoDjStatusChanged", autoDjStatusChanged);
     this._conn.on("Abort", abort);
     this._conn.onclose((e) => {
       alert(`您已断开连接，请刷新页面重连\n错误信息：${e}`);
@@ -107,6 +111,20 @@ export class Connection {
   public async getPlayHistory(): Promise<PlayHistoryEntry[]> {
     return await this._conn.invoke("GetPlayHistory");
   }
+
+  // [新增] 调用后端方法以控制机器人
+  public async disableAutoDj(): Promise<void> {
+    await this._conn.invoke("DisableAutoDj");
+  }
+
+  public async enableAutoDj(): Promise<void> {
+    await this._conn.invoke("EnableAutoDj");
+  }
+
+  public async getAutoDjStatus(): Promise<boolean> {
+    return await this._conn.invoke("GetAutoDjStatus");
+  }
+  // [新增] 结束
 }
 export interface Music {
   url: string;

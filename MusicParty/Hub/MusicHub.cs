@@ -160,6 +160,25 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         }
     }
 
+    // [新增] 控制机器人状态的方法
+    public async Task DisableAutoDj()
+    {
+        MusicBroadcaster.IsAutoDjManuallyDisabled = true;
+        await Clients.All.SendAsync("AutoDjStatusChanged", true);
+    }
+
+    public async Task EnableAutoDj()
+    {
+        MusicBroadcaster.IsAutoDjManuallyDisabled = false;
+        await Clients.All.SendAsync("AutoDjStatusChanged", false);
+    }
+
+    public bool GetAutoDjStatus()
+    {
+        return MusicBroadcaster.IsAutoDjManuallyDisabled;
+    }
+    // [新增] 结束
+
     public async Task EnqueueMusic(string id, string apiName)
     {
         if (!_musicApis.TryGetMusicApi(apiName, out var ma))

@@ -15,6 +15,9 @@ public class MusicBroadcaster
     private readonly UserManager _userManager;
     private readonly ILogger<MusicBroadcaster> _logger;
 
+    // [新增] 机器人手动控制开关
+    public static bool IsAutoDjManuallyDisabled { get; set; } = false;
+
     private const string RobotEnqueuerId = "auto-dj-robot";
     private const string RobotEnqueuerName = "自动点歌机器人";
     private const string _autoplaylistPath = "autoplaylist.json";
@@ -25,7 +28,7 @@ public class MusicBroadcaster
     private enum AutoDjMode { Inactive, Active }
     private AutoDjMode _currentAutoDjMode = AutoDjMode.Inactive;
     private DateTime _lastUserActivityTime = DateTime.Now;
-    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(3); // 恢复为2分钟
+    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(1); // 恢复为2分钟
     
     // [新增] 用于控制大扫除频率的变量
     private DateTime _lastSweepTime = DateTime.UtcNow;
@@ -161,6 +164,12 @@ public class MusicBroadcaster
                     _logger.LogInformation("所有用户已离开，自动DJ切换到 Inactive 状态。");
                     _currentAutoDjMode = AutoDjMode.Inactive;
                 }
+                // [修改] 无人时，自动重置手动禁用开关
+                if (IsAutoDjManuallyDisabled)
+                {
+                    IsAutoDjManuallyDisabled = false;
+                    _logger.LogInformation("所有用户已离开，自动点歌机器人已自动恢复为启用状态。");
+                }
             }
             else
             {
@@ -200,7 +209,8 @@ public class MusicBroadcaster
             }
             
             // --- 原有的播放逻辑 ---
-            if (_currentAutoDjMode == AutoDjMode.Active)
+            // [修改] 增加手动禁用判断
+            if (_currentAutoDjMode == AutoDjMode.Active && !IsAutoDjManuallyDisabled)
             {
                 if (NowPlaying is null && !MusicQueue.Any() && _autoplaylist.Any())
                 {
