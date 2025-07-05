@@ -28,7 +28,7 @@ public class MusicBroadcaster
     private enum AutoDjMode { Inactive, Active }
     private AutoDjMode _currentAutoDjMode = AutoDjMode.Inactive;
     private DateTime _lastUserActivityTime = DateTime.Now;
-    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromMinutes(1); // 恢复为2分钟
+    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromSeconds(5);//TimeSpan.FromMinutes(1); // 恢复为2分钟
     
     // [新增] 用于控制大扫除频率的变量
     private DateTime _lastSweepTime = DateTime.UtcNow;
