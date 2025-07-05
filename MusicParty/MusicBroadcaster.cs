@@ -167,8 +167,9 @@ public class MusicBroadcaster
                 // [修改] 无人时，自动重置手动禁用开关
                 if (IsAutoDjManuallyDisabled)
                 {
-                    IsAutoDjManuallyDisabled = false;
-                    _logger.LogInformation("所有用户已离开，自动点歌机器人已自动恢复为启用状态。");
+                    IsAutoDjManuallyDisabled = true;
+                    //_logger.LogInformation("所有用户已离开，自动点歌机器人已自动恢复为启用状态。");
+                    _logger.LogInformation("所有用户已离开，自动点歌机器人按钮已自动恢复为禁用状态。");
                 }
             }
             else
