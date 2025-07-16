@@ -143,7 +143,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             OnlineUsers.Remove(userId);
             // 注意：我们依然可以保留这里的RemoveUser，它能快速清理正常断开的用户
             // 但即使它失败了，心跳的“大扫除”机制也会最终清理掉这个用户
-            _userManager.RemoveUser(userId); 
+
+            //_userManager.RemoveUser(userId); 
             await OnlineUserLogout(userId);
         }
     }

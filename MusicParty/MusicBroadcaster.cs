@@ -16,7 +16,7 @@ public class MusicBroadcaster
     private readonly ILogger<MusicBroadcaster> _logger;
 
     // [新增] 机器人手动控制开关
-    public static bool IsAutoDjManuallyDisabled { get; set; } = false;
+    public static bool IsAutoDjManuallyDisabled { get; set; } = true;
 
     private const string RobotEnqueuerId = "auto-dj-robot";
     private const string RobotEnqueuerName = "自动点歌机器人";
@@ -32,7 +32,7 @@ public class MusicBroadcaster
     
     // [新增] 用于控制大扫除频率的变量
     private DateTime _lastSweepTime = DateTime.UtcNow;
-    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(1); // 每分钟进行一次大扫除
+    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(10); // 每10分钟进行一次大扫除
 
     public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
     private const string _playHistoryPath = "play_history.json";
