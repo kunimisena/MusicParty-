@@ -41,6 +41,11 @@ export class Connection {
     autoDjStatusChanged: (isDisabled: boolean) => void,
     abort: (msg: string) => void
   ) {
+      // 【修改一】在这里 .withUrl(url) 后面增加了 .withAutomaticReconnect()
+    this._conn = new sr.HubConnectionBuilder()
+      .withUrl(url)
+      .withAutomaticReconnect() // <--- 就是加在这里
+      .build();
     this._conn = new sr.HubConnectionBuilder().withUrl(url).build();
     this._conn.on("SetNowPlaying", setNowPlaying);
     this._conn.on("MusicEnqueued", musicEnqueued);
@@ -55,9 +60,6 @@ export class Connection {
     // [新增] 监听机器人状态变更事件
     this._conn.on("AutoDjStatusChanged", autoDjStatusChanged);
     this._conn.on("Abort", abort);
-    this._conn.onclose((e) => {
-      alert(`您已断开连接，请刷新页面重连\n错误信息：${e}`);
-    });
   }
   public async start(): Promise<any> {
     if (this._conn.state === sr.HubConnectionState.Disconnected) {

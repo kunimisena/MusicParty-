@@ -21,7 +21,7 @@
     "@types/react-dom": "18.0.9",
     "framer-motion": "^6",
     "next": "^15.3.2",
-    "pnpm": "^10.10.0",
+    "pnpm": "^10.13.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "typescript": "4.9.3"
