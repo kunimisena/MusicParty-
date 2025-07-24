@@ -46,7 +46,6 @@ export class Connection {
       .withUrl(url)
       .withAutomaticReconnect() // <--- 就是加在这里
       .build();
-    this._conn = new sr.HubConnectionBuilder().withUrl(url).build();
     this._conn.on("SetNowPlaying", setNowPlaying);
     this._conn.on("MusicEnqueued", musicEnqueued);
     this._conn.on("MusicDequeued", musicDequeued);
