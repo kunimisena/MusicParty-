@@ -213,7 +213,7 @@ public class NeteaseCloudMusicApi : IMusicApi
     public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为 idInput 以区分处理后的 id
     {
         // 定义电台节目前缀和我们用于打包时长的特殊标记
-        const string pidPrefix = "pid=";
+        const string pidPrefix = "id=";
         const string durationMarker = "duration";
 
         if (idInput != null && idInput.StartsWith(pidPrefix))
