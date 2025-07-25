@@ -152,13 +152,52 @@ public class NeteaseCloudMusicApi : IMusicApi
 
     public async Task<PlayableMusic> GetPlayableMusicAsync(Music music)
     {
-        var resp = await _http.GetStringAsync(_url + $"/song/url?id={music.Id}");
-        var j = JsonNode.Parse(resp)!;
-        if ((int)j["code"]! != 200)
-            throw new Exception($"Unable to get playable music, message: {resp}");
-        var url = (string)j["data"]![0]!["url"]!;
-        var length = (long)j["data"]![0]!["time"]!;
-        return new PlayableMusic(music) { Url = url.Replace("http", "https"), Length = length };
+        // 定义用于识别和分割“复合ID”的特殊标记
+        const string durationMarker = "duration";
+
+        if (music.Id != null && music.Id.Contains(durationMarker))
+        {
+            // --- 处理包含时长的“复合ID” ---
+
+            // 1. 分割字符串，获取真实ID和时长
+            string[] parts = music.Id.Split(new[] { durationMarker }, StringSplitOptions.None);
+            string realId = parts[0];
+            long length = long.Parse(parts[1]); // 直接从ID中解析出时长
+
+            // 2. 使用真实ID获取播放URL
+            var resp = await _http.GetStringAsync(_url + $"/song/url?id={realId}");
+            var j = JsonNode.Parse(resp)!;
+            if ((int)j["code"]! != 200 || j["data"]?.AsArray().Count == 0)
+                throw new Exception($"无法获取可播放的音乐 (id={realId})，消息: {resp}");
+            
+            var url = (string)j["data"]![0]!["url"]!;
+
+            // 3. 返回 PlayableMusic 对象，时长使用我们从ID中解析出的 length
+            // 使用对象初始值设定项来为 init-only 属性赋值
+            return new PlayableMusic(music)
+            {
+                Url = url.Replace("http", "https"),
+                Length = length
+            };
+        }
+        else
+        {
+            // --- 处理普通歌曲ID，逻辑完全不变 ---
+            var resp = await _http.GetStringAsync(_url + $"/song/url?id={music.Id}");
+            var j = JsonNode.Parse(resp)!;
+            if ((int)j["code"]! != 200 || j["data"]?.AsArray().Count == 0)
+                throw new Exception($"无法获取可播放的音乐 (id={music.Id})，消息: {resp}");
+            
+            var url = (string)j["data"]![0]!["url"]!;
+            var length = (long)j["data"]![0]!["time"]!;
+
+            // 同样使用对象初始值设定项
+            return new PlayableMusic(music)
+            {
+                Url = url.Replace("http", "https"),
+                Length = length
+            };
+        }
     }
 
     public async Task<bool> TrySetCredentialAsync(string cred)
@@ -171,17 +210,16 @@ public class NeteaseCloudMusicApi : IMusicApi
         return true;
     }
 
-public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为 idInput 以区分处理后的 id
+    public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为 idInput 以区分处理后的 id
     {
+        // 定义电台节目前缀和我们用于打包时长的特殊标记
         const string pidPrefix = "pid=";
+        const string durationMarker = "duration";
 
         if (idInput != null && idInput.StartsWith(pidPrefix))
         {
-            // 如果是 pid 开头形式
-            string programId = idInput.Substring(pidPrefix.Length); // 去掉 "pid=" 字符串，保留后面的id内容
-            // 用 /dj/program/detail?id= 来请求访问结果
-            // 注意：DJ节目详情通常不需要 cookie，但如果您的 API 代理需要，则添加
-            // var requestUrl = $"{_url}/dj/program/detail?id={programId}&cookie={GetCookieEncoded()}"; 
+            // --- 处理电台节目 (pid=...) ---
+            string programId = idInput.Substring(pidPrefix.Length);
             var requestUrl = $"{_url}/dj/program/detail?id={programId}&cookie={GetCookieEncoded()}";
             
             var resp = await _http.GetStringAsync(requestUrl);
@@ -192,25 +230,31 @@ public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为
             {
                 throw new Exception($"无法获取DJ节目详情 (pid={programId})，消息: {resp}");
             }
-            // 提取 "mainTrackId" 来得到 music 对象的 id
+
+            // 1. 提取真实的歌曲ID (mainTrackId)
             var mainTrackIdNode = j["program"]!["mainTrackId"];
             if (mainTrackIdNode == null)
             {
                 throw new Exception($"DJ节目 (pid={programId}) 响应中未找到 'mainTrackId'。响应: {resp}");
             }
-            string musicId = mainTrackIdNode.GetValue<long>().ToString(); // mainTrackId 通常是 long 类型
-            // 提取 program": { "mainSong": {"name": ": 中的内容作为music对象的name
+            string musicId = mainTrackIdNode.GetValue<long>().ToString();
+
+            // 2. 提取节目的时长 (duration)
+            var durationNode = j["program"]!["duration"];
+            if (durationNode == null)
+            {
+                throw new Exception($"DJ节目 (pid={programId}) 响应中未找到 'duration'。响应: {resp}");
+            }
+            long duration = durationNode.GetValue<long>();
+
+            // 3. 构造新的“复合ID”，格式为 "真实ID" + "duration" + "时长"
+            string compositeId = $"{musicId}{durationMarker}{duration}";
+
+            // 4. 提取歌曲名称
             var songNameNode = j["program"]!["mainSong"]?["name"];
-            string name;
-            if (songNameNode == null)
-            {
-                name = "未知歌曲";
-            }
-            else
-            {
-                name = songNameNode.GetValue<string>();
-            }
-            // 提取 "artists": [ { "name": 中的内容作为music对象的ar
+            string name = songNameNode?.GetValue<string>() ?? "未知歌曲";
+
+            // 5. 提取艺术家信息
             var artistsNode = j["program"]!["mainSong"]?["artists"]?.AsArray();
             string[] ar;
             if (artistsNode != null && artistsNode.Count > 0)
@@ -219,15 +263,13 @@ public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为
             }
             else
             {
-                // 如果没有艺术家信息，可以提供一个默认值或者抛出异常，根据需求
-                ar = new string[] { "未知艺术家" }; 
-                // 或者: throw new Exception($"DJ节目 (pid={programId}) 响应中未找到 'program.mainSong.artists'。响应: {resp}");
+                ar = new string[] { "未知艺术家" };
             }
             
-            // 返回 music 对象 (使用从 mainTrackId 获取的 musicId)
-            return new Music(musicId, name, ar);
+            // 6. 使用我们构造的“复合ID”返回 Music 对象
+            return new Music(compositeId, name, ar);
         }
-        else //直接是id形式，下面不变！不变！不变！
+        else // --- 处理普通歌曲ID，逻辑完全不变 ---
         {
             var resp = await _http.GetStringAsync(_url + $"/song/detail?ids={idInput}&cookie={GetCookieEncoded()}");
             var j = JsonNode.Parse(resp)!;
@@ -236,7 +278,7 @@ public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为
             
             var name = j["songs"]![0]!["name"]!.GetValue<string>();
             var ar = j["songs"]![0]!["ar"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()).ToArray();
-            return new Music(idInput, name, ar); // 对于普通歌曲，输入的idInput就是歌曲ID
+            return new Music(idInput, name, ar);
         }
     }
 
