@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using MusicParty.MusicApi;
-using System.Collections.Concurrent; // [新增] 为 ConcurrentDictionary 添加引用
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using static MusicParty.MusicBroadcaster;
@@ -21,7 +21,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         public long Timestamp { get; set; }
     }
 
-    // [新增] 用于安全地管理待删除任务的字典
+    // 用于安全地管理待删除任务的字典
     private static readonly ConcurrentDictionary<string, CancellationTokenSource> _pendingDisconnects = new();
 
     private static HashSet<string> OnlineUsers { get; } = new();
@@ -113,15 +113,18 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     public override async Task OnConnectedAsync()
     {
         var userId = Context.User!.Identity!.Name!;
+        bool isReconnecting = false;
 
-        // [修改] 如果该用户存在待删除任务，则立即取消它，防止用户因刷新页面被误删
+        // 检查并取消待删除任务
         if (_pendingDisconnects.TryRemove(userId, out var cts))
         {
+            isReconnecting = true; // 标记这是一个刷新重连的用户
             cts.Cancel();
-            _logger.LogInformation("User {UserId} reconnected, cancelling pending disconnect.", userId);
+            _logger.LogInformation("User {UserId} reconnected within 5s, cancelling pending disconnect.", userId);
         }
 
-        if (OnlineUsers.Contains(userId))
+        // 只有在用户不是“刷新重连”的情况下，才进行重复登录检查
+        if (!isReconnecting && OnlineUsers.Contains(userId))
         {
             DuplicatedConnectionIds.Add(Context.ConnectionId);
             await Clients.Caller.SendAsync("Abort", "您已在别处登录。");
@@ -131,7 +134,12 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         OnlineUsers.Add(userId);
         _userManager.UpdateUserHeartbeat(userId);
-        await OnlineUserLogin(Clients.Others, userId);
+
+        // 如果不是重连用户（即，是一个全新的登录），才向其他人广播登录消息
+        if (!isReconnecting)
+        {
+            await OnlineUserLogin(Clients.Others, userId);
+        }
         
         if (_musicBroadcaster.NowPlaying is not null) {
             var (music, _, enqueuerName, _, _) = _musicBroadcaster.NowPlaying.Value;
@@ -154,7 +162,6 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             return Task.CompletedTask;
         }
 
-        // [修改] 启动一个可取消的、5秒后执行的延迟删除任务
         var cts = new CancellationTokenSource();
         _pendingDisconnects[userId] = cts;
 
@@ -168,9 +175,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
                 // 如果5秒后任务没有被取消，说明用户真的离开了，执行清理
                 _logger.LogInformation("User {UserId} did not reconnect in 5s. Proceeding with cleanup.", userId);
                 
-                // 注意：这里不再需要 _userManager.RemoveUser(userId)
-                // 因为用户的移除现在完全由 MusicBroadcaster 中的心跳大扫除机制负责，
-                // 这里的 OnlineUsers.Remove 是为了让 GetOnlineUsers() 能即时反映正确的人数。
+                // [修改] 恢复对 UserManager 的调用，确保正常断连的用户被及时、正确地移除
+                _userManager.RemoveUser(userId); 
                 OnlineUsers.Remove(userId); 
                 
                 await OnlineUserLogout(userId);
