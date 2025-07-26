@@ -6,7 +6,6 @@ export interface HistoryMusic {
   artists: string[];
 }
 
-// 播放历史条目接口，保持不变
 export interface PlayHistoryEntry {
   music: HistoryMusic;
   apiName: string;
@@ -37,14 +36,14 @@ export class Connection {
     onlineUserRename: (id: string, newName: string) => void, 
     newChat: (name: string, content: string, timestamp: number) => void,
     globalMessage: (content: string) => void,
-    // [新增] 接收机器人状态变更的处理器
     autoDjStatusChanged: (isDisabled: boolean) => void,
-    abort: (msg: string) => void
+    abort: (msg: string) => void,
+    // +++ 新增: 用于处理重连成功事件的回调函数 +++
+    onReconnected: () => Promise<void>
   ) {
-      // 【修改一】在这里 .withUrl(url) 后面增加了 .withAutomaticReconnect()
     this._conn = new sr.HubConnectionBuilder()
       .withUrl(url)
-      .withAutomaticReconnect() // <--- 就是加在这里
+      .withAutomaticReconnect() 
       .build();
     this._conn.on("SetNowPlaying", setNowPlaying);
     this._conn.on("MusicEnqueued", musicEnqueued);
@@ -56,9 +55,14 @@ export class Connection {
     this._conn.on("OnlineUserRename", onlineUserRename);
     this._conn.on("NewChat", newChat);
     this._conn.on("GlobalMessage", globalMessage);
-    // [新增] 监听机器人状态变更事件
     this._conn.on("AutoDjStatusChanged", autoDjStatusChanged);
     this._conn.on("Abort", abort);
+
+    // +++ 新增: 注册 onreconnected 钩子, 当自动重连成功时调用传入的回调 +++
+    this._conn.onreconnected(async () => {
+        console.log("Connection re-established. Triggering sync logic.");
+        await onReconnected();
+    });
   }
   public async start(): Promise<any> {
     if (this._conn.state === sr.HubConnectionState.Disconnected) {
@@ -69,14 +73,10 @@ export class Connection {
   public async enqueueMusic(id: string, apiName: string): Promise<void> {
     await this._conn.invoke("EnqueueMusic", id, apiName);
   }
-  // +++ 新增下面的 heartbeat 方法 +++
   public async heartbeat(): Promise<void> {
-    // 这个方法不需要任何参数，它只是简单地调用后端的 "Heartbeat" 方法
     await this._conn.invoke("Heartbeat");
   }
-  // [修改] replayMusic 方法现在接收一个 HistoryMusic 对象和 apiName
   public async replayMusic(music: HistoryMusic, apiName: string): Promise<void> {
-    // [修改] 调用后端的 ReplayMusic，传递 music 对象和 apiName
     await this._conn.invoke("ReplayMusic", music, apiName);
   }
   
@@ -93,7 +93,6 @@ export class Connection {
     await this._conn.invoke("TopSong", actionId);
   }
   public async rename(newName: string): Promise<{ id: string; name: string }> {
-    // [修改] 调用后端的 "Rename" 方法，并接收其返回值
     return await this._conn.invoke("Rename", newName);
   }
   public async getOnlineUsers(): Promise<{ id: string; name: string }[]> {
@@ -114,7 +113,6 @@ export class Connection {
     return await this._conn.invoke("GetPlayHistory");
   }
 
-  // [新增] 调用后端方法以控制机器人
   public async disableAutoDj(): Promise<void> {
     await this._conn.invoke("DisableAutoDj");
   }
@@ -126,7 +124,6 @@ export class Connection {
   public async getAutoDjStatus(): Promise<boolean> {
     return await this._conn.invoke("GetAutoDjStatus");
   }
-  // [新增] 结束
 }
 export interface Music {
   url: string;

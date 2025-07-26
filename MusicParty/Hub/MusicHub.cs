@@ -120,20 +120,28 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             _logger.LogInformation("User {UserId} reconnected within 5s, cancelling pending disconnect.", userId);
         }
 
+        // --- 这是唯一的、关键的修改点 ---
         if (!isReconnecting && OnlineUsers.Contains(userId))
         {
-            DuplicatedConnectionIds.Add(Context.ConnectionId);
-            await Clients.Caller.SendAsync("Abort", "您已在别处登录。");
-            Context.Abort();
-            return;
+            // [旧的、过于严格的逻辑被注释掉]
+            // DuplicatedConnectionIds.Add(Context.ConnectionId);
+            // await Clients.Caller.SendAsync("Abort", "您已在别处登录。");
+            // Context.Abort();
+            // return;
+
+            // [新的、更宽容的逻辑]
+            // 我们不再粗暴地终止连接，而是记录一条警告。
+            // 我们假设这是一个由移动端重连竞态导致的“僵尸”连接，它很快会自行超时。
+            // 允许新的连接继续，可以确保用户体验不中断。
+            _logger.LogWarning("User {UserId} is connecting, but their ID was already in the OnlineUsers set. This is likely a mobile reconnect race condition. Allowing the new connection to proceed.", userId);
         }
+        // --- 修改结束 ---
 
         OnlineUsers.Add(userId);
         _userManager.UpdateUserHeartbeat(userId);
 
         if (!isReconnecting)
         {
-            // [修改] 委托给 MusicBroadcaster 执行广播
             await OnlineUserLogin(userId);
         }
         
@@ -169,10 +177,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
                 _logger.LogInformation("User {UserId} did not reconnect in 5s. Proceeding with cleanup.", userId);
                 
-                //_userManager.RemoveUser(userId); 
                 OnlineUsers.Remove(userId); 
                 
-                // [修改] 委托给 MusicBroadcaster 执行广播
                 await OnlineUserLogout(userId);
             }
             catch (OperationCanceledException)
@@ -285,7 +291,6 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         var userId = Context.User!.Identity!.Name!;
         _userManager.RenameUserById(userId, newName);
         
-        // [修改] 委托给 MusicBroadcaster 执行广播
         await OnlineUserRename(userId);
         
         var updatedUser = _userManager.FindUserById(userId)!;
@@ -340,20 +345,17 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         await target.SendAsync(nameof(SetNowPlaying), music, enqueuerName, playedTime);
     }
 
-    // [修改] 简化并委托广播任务
     private async Task OnlineUserLogin(string id)
     {
         var userName = _userManager.FindUserById(id)?.Name ?? "新用户";
         await _musicBroadcaster.BroadcastUserLoginAsync(id, userName);
     }
 
-    // [修改] 简化并委托广播任务
     private async Task OnlineUserLogout(string id)
     {
         await _musicBroadcaster.BroadcastUserLogoutAsync(id);
     }
 
-    // [修改] 简化并委托广播任务
     private async Task OnlineUserRename(string id)
     {
         var newUserName = _userManager.FindUserById(id)!.Name;

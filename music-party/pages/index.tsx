@@ -47,12 +47,12 @@ import { BilibiliBinder } from '../src/components/bilibilibinder';
 import { KuGouBinder } from '../src/components/kugoubinder';
 import { PlayHistory } from '../src/api/playhistory';
 
-// --- Cookie 辅助函数 ---
-const COOKIE_USERNAME_KEY = 'chat_username_preference'; // 用于存储用户名的 Cookie键
-const DEFAULT_USERNAME_ON_NO_COOKIE = "请设置用户名"; // Cookie中没有用户名时的默认提示
+// --- Cookie 辅助函数 (保持不变) ---
+const COOKIE_USERNAME_KEY = 'chat_username_preference';
+const DEFAULT_USERNAME_ON_NO_COOKIE = "请设置用户名";
 
 const getCookie = (name: string): string | null => {
-  if (typeof document === 'undefined') { // 防止在服务器端渲染时调用 document
+  if (typeof document === 'undefined') {
     return null;
   }
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
@@ -63,7 +63,7 @@ const getCookie = (name: string): string | null => {
 };
 
 const setCookie = (name: string, value: string, days: number) => {
-  if (typeof document === 'undefined') { // 防止在服务器端渲染时调用 document
+  if (typeof document === 'undefined') {
     return;
   }
   let expires = "";
@@ -74,6 +74,95 @@ const setCookie = (name: string, value: string, days: number) => {
   }
   document.cookie = name + "=" + (encodeURIComponent(value) || "")  + expires + "; path=/";
 };
+
+// 聊天组件 (来自上次的性能优化, 保持不变)
+const ChatSection = React.memo(function ChatSection({
+    conn,
+    chatContent,
+  }: {
+    conn: Connection | undefined;
+    chatContent: { name: string; content: string; timestamp: number }[];
+  }) {
+    const [chatToSend, setChatToSend] = useState('');
+  
+    return (
+      <Card>
+        <CardHeader>
+          <Heading>聊天</Heading>
+        </CardHeader>
+        <CardBody>
+          <Flex>
+            <Input
+              flex={1}
+              value={chatToSend}
+              onChange={(e) => setChatToSend(e.target.value)}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter') {
+                  if (chatToSend.trim() === '') return;
+                  await conn?.chatSay(chatToSend);
+                  setChatToSend('');
+                }
+              }}
+            />
+            <Button
+              ml={2}
+              onClick={async () => {
+                if (chatToSend.trim() === '') return;
+                await conn?.chatSay(chatToSend);
+                setChatToSend('');
+              }}
+            >
+              发送
+            </Button>
+          </Flex>
+          <UnorderedList
+            maxH="300px"
+            overflowY="auto"
+            pr={2}
+            listStyleType="none"
+            spacing={2}
+            width="100%"
+          >
+            {chatContent.map((s) => (
+              <ListItem
+                key={`msg-${s.timestamp}`}
+                bg="gray.50"
+                p={2}
+                borderRadius="md"
+                wordBreak="break-word"
+              >
+                <Text as="span" fontSize="xs" color="gray.500" mr={2}>
+                  {new Date(s.timestamp).toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                  })}
+                </Text>
+                <Text as="span" fontWeight="bold">
+                  {s.name}:
+                </Text>
+                <Text
+                  as="span"
+                  ml={2}
+                  whiteSpace="pre-wrap"
+                  overflowWrap="break-word"
+                  display="inline-block"
+                  maxW="full"
+                >
+                  {s.content}
+                </Text>
+              </ListItem>
+            ))}
+          </UnorderedList>
+        </CardBody>
+      </Card>
+    );
+});
+
 
 export default function Home() {
   const [src, setSrc] = useState('');
@@ -91,163 +180,152 @@ export default function Home() {
   const [inited, setInited] = useState(false);
   const [chatContent, setChatContent] = useState<
   { name: string; content: string; timestamp: number }[]
-  >([]); // 初始化为空数组
-  // [新增] 机器人状态
+  >([]); 
   const [isAutoDjDisabled, setIsAutoDjDisabled] = useState(false);
   const [isConnReady, setIsConnReady] = useState(false);
-  const [chatToSend, setChatToSend] = useState('');
   const [apis, setApis] = useState<string[]>([]);
   const t = useToast();
 
   const conn = useRef<Connection>();
+  // +++ 1. 创建“同步锁” +++
+  // 使用 useRef, 因为它的变化不会触发组件重渲染
+  const isSyncing = useRef(false);
+
+  // +++ 2. 定义一个统一的、健壮的“身份确认与状态同步”函数 +++
+  const syncIdentityAndState = async () => {
+    if (!conn.current) return;
+
+    try {
+      console.log("Syncing identity and state with server...");
+
+      // 步骤一: 重新确认身份
+      const preferredName = getCookie(COOKIE_USERNAME_KEY) || DEFAULT_USERNAME_ON_NO_COOKIE;
+      const userProfile = await conn.current.rename(preferredName);
+      const confirmedName = userProfile.name;
+
+      // 步骤二: 用服务器确认后的信息更新本地核心状态
+      setUserName(confirmedName);
+      setCookie(COOKIE_USERNAME_KEY, confirmedName, 365);
+
+      // 步骤三: 在身份统一后, 安全地获取所有其它数据
+      const users = await conn.current.getOnlineUsers();
+      setOnlineUsers(users);
+
+      const queueData = await conn.current.getMusicQueue();
+      setQueue(queueData);
+      
+      await conn.current.requestSetNowPlaying();
+
+      const autoDjStatus = await conn.current.getAutoDjStatus();
+      setIsAutoDjDisabled(autoDjStatus);
+
+      console.log("Sync complete. Current user:", confirmedName);
+
+    } catch (err) {
+      console.error("Failed to sync identity and state:", err);
+      toastError(t, "与服务器同步失败，请尝试刷新页面。");
+    }
+  };
+
 
   useEffect(() => {
     if (!conn.current) {
       conn.current = new Connection(
         `${window.location.origin}/music`,
+        // --- SignalR事件回调 ---
         async (music: Music, enqueuerName: string, playedTime: number) => {
-          console.log(music);
+          // 这个回调不需要锁，因为它不处理用户列表
           setSrc(music.url);
           setNowPlaying({ music, enqueuer: enqueuerName });
           setPlaytime(playedTime);
         },
         async (actionId: string, music: Music, enqueuerName: string) => {
+          // 这个回调不需要锁
           setQueue((q) => q.concat({ actionId, music, enqueuerName }));
         },
-        async () => {
-          setQueue((q) => q.slice(1));
-        },
+        async () => setQueue((q) => q.slice(1)),
         async (actionId: string, operatorName: string) => {
           setQueue((q) => {
             const target = q.find((x) => x.actionId === actionId)!;
-            toastInfo(
-              t,
-              `歌曲 "${target.music.name}-${target.music.artists}" 被 ${operatorName} 置顶了`
-            );
+            toastInfo(t, `歌曲 "${target.music.name}-${target.music.artists}" 被 ${operatorName} 置顶了`);
             return [target].concat(q.filter((x) => x.actionId !== actionId));
           });
         },
-        async (operatorName: string, _) => {
-          toastInfo(t, `${operatorName} 切到了下一首歌`);
-        },
+        async (operatorName: string, _) => toastInfo(t, `${operatorName} 切到了下一首歌`),
+        
+        // +++ 3. 在处理用户列表相关的广播时, 检查“同步锁” +++
         async (id: string, name: string) => {
+          if (isSyncing.current) return; // 如果正在同步, 则忽略此广播
           setOnlineUsers((u) => u.concat({ id, name }));
         },
         async (id: string) => {
+          if (isSyncing.current) return; // 如果正在同步, 则忽略此广播
           setOnlineUsers((u) => u.filter((x) => x.id !== id));
         },
         async (id: string, newName: string) => {
-          setOnlineUsers((u) =>
-            u.map((x) => (x.id === id ? { id, name: newName } : x))
-          );
+          if (isSyncing.current) return; // 如果正在同步, 则忽略此广播
+          setOnlineUsers((u) => u.map((x) => (x.id === id ? { id, name: newName } : x)));
         },
+        
         async (name: string, content: string, timestamp: number) => {
-
-          setChatContent(prevChatContent => {
-              const newMsg = {
-              name,
-              content: content.trim(),
-              timestamp: timestamp * 1000
-            };
-
-            return [newMsg, ...prevChatContent].slice(0, 100);
-          }); 
+          setChatContent(prevChatContent => [{ name, content: content.trim(), timestamp: timestamp * 1000 }, ...prevChatContent].slice(0, 100)); 
         },
-        async (content: string) => {
-          // todo
-          console.log(content);
-          },
-        // [新增] 机器人状态变更处理器
+        async (content: string) => console.log(content),
         (isDisabled: boolean) => {
           setIsAutoDjDisabled(isDisabled);
           toastInfo(t, `自动点歌机器人已${isDisabled ? '禁用' : '启用'}`);
         },
         async (msg: string) => {
           console.error(msg);
-          toastError(t, msg); // ✅ 直接使用已定义的msg参数
+          toastError(t, msg);
+        },
+        // +++ 4. 在重连成功时, 启动“同步锁”流程 +++
+        async () => {
+          toastInfo(t, "已重新连接，正在同步状态...");
+          isSyncing.current = true; // 上锁!
+          await syncIdentityAndState(); // 执行同步
+          isSyncing.current = false; // 解锁!
         }
       );
+
+      // --- 页面首次加载逻辑 ---
       conn.current
         .start()
         .then(async () => {
-          // --- 以下是本次修改的核心逻辑 ---
-          const preferredNameFromCookie = getCookie(COOKIE_USERNAME_KEY);
-          const initialNameCandidate = preferredNameFromCookie || DEFAULT_USERNAME_ON_NO_COOKIE;
+          console.log("Initial connection successful.");
+          // 首次加载时, 也使用这个统一的函数来初始化
+          await syncIdentityAndState();
+
+          // 首次加载时还需要额外获取聊天记录
+          const chatHistory = await conn.current!.getChatHistory();
+          setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
           
-          try {
-            // [修改] 调用改造后的 rename 方法，它会直接返回确认后的用户信息
-            // 这一行代码同时完成了“重命名”和“获取用户信息”两个操作，消除了竞态
-            const userProfile = await conn.current!.rename(initialNameCandidate);
-            
-            // 现在 userProfile 直接就是后端返回的最新、最准确的用户对象
-            const confirmedName = userProfile.name;
-
-            setUserName(confirmedName);
-            setCookie(COOKIE_USERNAME_KEY, confirmedName, 365); // 保存服务器确认的名称到Cookie
-            console.log(`[INIT] 服务器确认的用户名: ${confirmedName} (已存入Cookie)`);
-            
-            if (confirmedName === DEFAULT_USERNAME_ON_NO_COOKIE && !preferredNameFromCookie) {
-              toastInfo(t, "欢迎您！请记得修改您的用户名。");
-            }
-
-            // --- 其他获取初始数据的逻辑不变 ---
-            const queueData = await conn.current!.getMusicQueue();
-            setQueue(queueData);
-            const users = await conn.current!.getOnlineUsers();
-            setOnlineUsers(users);
-            const chatHistory = await conn.current!.getChatHistory();
-            setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
-            const autoDjStatus = await conn.current!.getAutoDjStatus();
-            setIsAutoDjDisabled(autoDjStatus);
-            setIsConnReady(true); // 连接和初始数据加载全部完成后，设置就绪状态
-          } catch (err: any) {
-            toastError(t, `自动恢复用户名失败: ${err.toString()}`);
-            // [修改] 降级处理：在恢复失败时，不再询问服务器。
-            // 我们选择无条件相信浏览器Cookie中存储的名字。
-            setUserName(initialNameCandidate);
-            
-            // 同时，用我们自己Cookie里的正确名字，再次尝试覆盖一次，确保Cookie的正确性。
-            setCookie(COOKIE_USERNAME_KEY, initialNameCandidate, 365);
-
-            // [修改] 成功设置本地状态后，继续执行后续的初始化逻辑
-            const queueData = await conn.current!.getMusicQueue();
-            setQueue(queueData);
-            const users = await conn.current!.getOnlineUsers();
-            setOnlineUsers(users);
-            const chatHistory = await conn.current!.getChatHistory();
-            setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
-            const autoDjStatus = await conn.current!.getAutoDjStatus();
-            setIsAutoDjDisabled(autoDjStatus);
-            setIsConnReady(true);
-          }
+          setIsConnReady(true);
         })
         .catch((e) => {
           console.error(e);
-          toastError(t, '请刷新页面重试');
+          toastError(t, '连接服务器失败，请刷新页面重试');
         });
 
       getMusicApis().then((as) => setApis(as));
-
       setInited(true);
     }
   }, [t]);
 
 
+  // --- 其他 useEffect (保持不变) ---
   useEffect(() => {
-    // 移动端优化代码
-    if (typeof window !== 'undefined') { // 确保只在客户端运行
+    if (typeof window !== 'undefined') { 
       const meta = document.createElement('meta');
       meta.name = 'viewport';
       meta.content = 'width=device-width, initial-scale=1, maximum-scale=1';
       document.head.prepend(meta);
-
       const style = document.createElement('style');
       style.innerHTML = `
         @media (max-width: 768px) {
           body { padding: 8px !important; }
           .container > * { width: 100% !important; }
           button { min-width: 120px !important; }
-          /* 以下新增针对你的布局 */
           [data-area="nav"], [data-area="main"] {
             grid-column: 1 / -1 !important;
           }
@@ -258,37 +336,23 @@ export default function Home() {
       document.head.appendChild(style);
     }
   }, []);
- // +++ 新增下面的整个 useEffect 代码块 +++
- useEffect(() => {
-   // 确保 SignalR 连接已经完全就绪
-   if (!isConnReady || !conn.current) {
-     return;
-   }
 
-   // 设置一个定时器，每隔 60 秒（1分钟）发送一次心跳
+ useEffect(() => {
+   if (!isConnReady || !conn.current) return;
    const heartbeatInterval = setInterval(() => {
-     console.log("Sending heartbeat..."); // 这行日志可以帮助你调试
+     console.log("Sending heartbeat...");
      conn.current?.heartbeat();
    }, 60000); 
+   return () => clearInterval(heartbeatInterval);
+ }, [isConnReady]);
 
-   // 关键的清理步骤：当组件被卸载（比如用户离开页面）时，
-   // 清除这个定时器，防止内存泄漏。
-   return () => {
-     clearInterval(heartbeatInterval);
-   };
- }, [isConnReady]); // 这个 effect 只在 isConnReady 状态变化时运行一次
+  // --- JSX (保持不变) ---
   return (
     <Grid 
-  templateAreas={{
-    base: `"nav" "main"`,  // 手机：上下排列
-    md: `"nav main"`       // 桌面：左右排列
-  }}
-  gridTemplateColumns={{
-    base: '1fr',          // 手机：单列
-    md: '2fr 5fr'         // 桌面：两列比例
-  }}
-  gap='1'
->
+      templateAreas={{ base: `"nav" "main"`, md: `"nav main"` }}
+      gridTemplateColumns={{ base: '1fr', md: '2fr 5fr' }}
+      gap='1'
+    >
       <Head>
         <title>🎵 音趴 🎵</title>
         <meta name='description' content='享受音趴！' />
@@ -366,12 +430,12 @@ export default function Home() {
                                 }
                                 try {
                                   await conn.current!.rename(newName.trim());
-                                  const user = await getProfile(); // 从服务器获取确认后的名字
+                                  const user = await getProfile();
                                   setUserName(user.name);
-                                  setCookie(COOKIE_USERNAME_KEY, user.name, 365); // 更新Cookie
+                                  setCookie(COOKIE_USERNAME_KEY, user.name, 365);
                                   toastInfo(t, `名字已成功修改为: ${user.name}`);
                                   onClose();
-                                  setNewName(''); // 清空输入框
+                                  setNewName('');
                                 } catch (error: any) {
                                   console.error("Failed to rename:", error);
                                   toastError(t, `修改名字失败: ${error.toString()}`);
@@ -386,7 +450,6 @@ export default function Home() {
                     </>
                   )}
                 </Popover>
-                +                {/* [新增] 自动点歌机器人控制按钮 */}
                 <Flex
                   alignItems="center"
                   p={2}
@@ -429,85 +492,9 @@ export default function Home() {
               </UnorderedList>
             </CardBody>
           </Card>
-          <Card>
-            <CardHeader>
-              <Heading>聊天</Heading>
-            </CardHeader>
-            <CardBody>
-              <Flex>
-                <Input
-                  flex={1}
-                  value={chatToSend}
-                  onChange={(e) => setChatToSend(e.target.value)}
-                  onKeyDown={async (e) => {
-                    if (e.key === "Enter") {
-                      if (chatToSend === '') return;
-                      await conn.current?.chatSay(chatToSend);
-                      setChatToSend('');
-                    }
-                  }}
-                />
-                <Button
-                  ml={2}
-                  onClick={async () => {
-                    if (chatToSend === '') return;
-                    await conn.current?.chatSay(chatToSend);
-                    setChatToSend('');
-                  }}
-                >
-                  发送
-                </Button>
-              </Flex>
-                <UnorderedList 
-                  maxH="300px"          
-                  overflowY="auto"      
-                  pr={2}
-                  listStyleType="none"  
-                  spacing={2}
-                  width="100%"
-                >
-                  {chatContent.map((s) => ( // chatContent is already newest first [msg3, msg2, msg1]
-                      <ListItem
-                        key={`msg-${s.timestamp}`}
-                        bg="gray.50"
-                        p={2}
-                        borderRadius="md"
-                        wordBreak="break-word"
-                      >
-                        {/* 时间显示 - Use timestamp (already in ms) */}
-                        <Text
-                          as="span"
-                          fontSize="xs"
-                          color="gray.500"
-                          mr={2}
-                        >
-                          {new Date(s.timestamp).toLocaleString('zh-CN', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: false
-                           })}
-                        </Text>
-                        {/* 消息内容 */}
-                        <Text as="span" fontWeight="bold">{s.name}:</Text>
-                        <Text 
-                          as="span" 
-                          ml={2}
-                          whiteSpace="pre-wrap"
-                          overflowWrap="break-word"
-                          display="inline-block"
-                          maxW="full"
-                        >
-                          {s.content}
-                        </Text>
-                      </ListItem>
-                    ))}
-                </UnorderedList>
-            </CardBody>
-          </Card>
+
+          <ChatSection conn={conn.current} chatContent={chatContent} />
+
         </Stack>
       </GridItem>
 
