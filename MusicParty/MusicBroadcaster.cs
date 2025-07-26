@@ -52,25 +52,38 @@ public class MusicBroadcaster
         LoadPlayHistory();
         Task.Run(Loop);
     }
-    
+        
     private void LoadAutoplaylist()
     {
         try
         {
-            if (File.Exists(_autoplaylistPath))
+            // [修改] 将读取的文件从 _autoplaylistPath 改为 _playHistoryPath
+            if (File.Exists(_playHistoryPath))
             {
-                var jsonString = File.ReadAllText(_autoplaylistPath);
-                var playlist = JsonSerializer.Deserialize<List<AutoplaylistItem>>(jsonString);
-                if (playlist != null && playlist.Any())
+                var jsonString = File.ReadAllText(_playHistoryPath);
+
+                // [修改] 将JSON解析为播放历史的格式 (List<PlayHistoryEntry>)
+                var history = JsonSerializer.Deserialize<List<PlayHistoryEntry>>(jsonString);
+
+                if (history != null && history.Any())
                 {
-                    _autoplaylist = playlist;
-                    _logger.LogInformation("成功加载自动播放列表，共 {Count} 首歌曲。", _autoplaylist.Count);
+                    // [修改] 核心转换逻辑：
+                    // 将解析出的、结构复杂的“播放历史”列表，
+                    // 转换为机器人逻辑原本期望的、结构简单的 AutoplaylistItem 列表。
+                    // 这个过程只提取每首歌的 ID 和 ApiName。
+                    _autoplaylist = history
+                        .Select(entry => new AutoplaylistItem(entry.Music.Id, entry.ApiName))
+                        .ToList();
+
+                    // [修改] 更新日志信息，使其能准确反映数据来源
+                    _logger.LogInformation("成功从播放历史加载机器人播放列表，共 {Count} 首歌曲。", _autoplaylist.Count);
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "加载自动播放列表失败。");
+            // [修改] 更新日志信息
+            _logger.LogError(ex, "从播放历史加载机器人播放列表失败。");
         }
     }
 
@@ -110,7 +123,7 @@ public class MusicBroadcaster
             _logger.LogError(ex, "写入播放历史到文件失败: {FilePath}", _playHistoryPath);
         }
     }
-    
+
     private async Task AddToHistoryAndSaveAsync((PlayableMusic music, string enqueuerId, string enqueuerName, string apiName, bool IsReplay) playedSong)
     {
         if (playedSong.IsReplay || playedSong.enqueuerId == RobotEnqueuerId)
@@ -134,6 +147,10 @@ public class MusicBroadcaster
         }
 
         await SavePlayHistoryAsync();
+        
+        // [新增] 在播放历史更新后，立即重新加载机器人的播放列表
+        // 这会从刚刚更新过的 play_history.json 文件中读取最新的歌曲列表
+        LoadAutoplaylist();
     }
 
 
