@@ -11,26 +11,23 @@ public class MusicBroadcaster
     private ToppableQueue<MusicOrderAction> MusicQueue { get; } = new();
     public DateTime NowPlayingStartedTime { get; private set; }
     private readonly IEnumerable<IMusicApi> _apis;
-    private readonly IHubContext<MusicHub> _context;
+    private readonly IHubContext<MusicHub> _context; // 这是我们可靠的“广播中心”
     private readonly UserManager _userManager;
     private readonly ILogger<MusicBroadcaster> _logger;
 
-    // [新增] 机器人手动控制开关
     public static bool IsAutoDjManuallyDisabled { get; set; } = true;
 
     private const string RobotEnqueuerId = "auto-dj-robot";
     private const string RobotEnqueuerName = "自动点歌机器人";
-
     private readonly Random _random = new();
 
     private enum AutoDjMode { Inactive, Active }
     private AutoDjMode _currentAutoDjMode = AutoDjMode.Inactive;
     private DateTime _lastUserActivityTime = DateTime.Now;
-    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromSeconds(5);//TimeSpan.FromMinutes(1); // 恢复为2分钟
+    private readonly TimeSpan _userActivityTimeout = TimeSpan.FromSeconds(5);
     
-    // [新增] 用于控制大扫除频率的变量
     private DateTime _lastSweepTime = DateTime.UtcNow;
-    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(2); // 每2分钟进行一次大扫除
+    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(2);
 
     public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
     private const string _playHistoryPath = "play_history.json";
@@ -46,12 +43,10 @@ public class MusicBroadcaster
         _userManager = userManager;
         _logger = logger;
         
-
         LoadPlayHistory();
         Task.Run(Loop);
     }
         
-
     private void LoadPlayHistory()
     {
         try
@@ -112,18 +107,12 @@ public class MusicBroadcaster
         }
 
         await SavePlayHistoryAsync();
-        
-        // [新增] 在播放历史更新后，立即重新加载机器人的播放列表
-        // 这会从刚刚更新过的 play_history.json 文件中读取最新的歌曲列表
-
     }
-
 
     private async Task Loop()
     {
         while (true)
         {
-            // [新增] 定时大扫除逻辑
             if (DateTime.UtcNow - _lastSweepTime > _sweepInterval)
             {
                 var clearedUserIds = _userManager.ClearInactiveUsers();
@@ -132,29 +121,27 @@ public class MusicBroadcaster
                     _logger.LogInformation("清理了 {Count} 个掉线的用户。", clearedUserIds.Count);
                     foreach (var userId in clearedUserIds)
                     {
-                        await _context.Clients.All.SendAsync("OnlineUserLogout", userId);
+                        // [修改] 调用新的广播方法，确保通知能被可靠发送
+                        await BroadcastUserLogoutAsync(userId);
                     }
                 }
                 _lastSweepTime = DateTime.UtcNow;
             }
 
-            // --- 原有的机器人逻辑 ---
             if (!_userManager.HasOnlineUsers())
             {
                 if (_currentAutoDjMode == AutoDjMode.Active)
                 {
                     _logger.LogInformation("所有用户已离开，自动DJ切换到 Inactive 状态。");
-                    _logger.LogInformation("所有用户已离开，自动点歌机器人按钮已自动恢复为禁用状态。");
                     _currentAutoDjMode = AutoDjMode.Inactive;
-                    IsAutoDjManuallyDisabled = true;
                 }
-                // [修改] 无人时，自动重置手动禁用开关
-                //if (IsAutoDjManuallyDisabled)
-                //{
-                //    IsAutoDjManuallyDisabled = true;
-                //    _logger.LogInformation("所有用户已离开，自动点歌机器人已自动恢复为启用状态。");
-                //    _logger.LogInformation("所有用户已离开，自动点歌机器人按钮已自动恢复为禁用状态。");
-                //}
+                
+                if (!IsAutoDjManuallyDisabled)
+                {
+                    IsAutoDjManuallyDisabled = true;
+                    _logger.LogInformation("所有用户已离开，自动点歌机器人按钮已自动恢复为禁用状态。");
+                    await _context.Clients.All.SendAsync("AutoDjStatusChanged", true);
+                }
             }
             else
             {
@@ -193,8 +180,6 @@ public class MusicBroadcaster
                 }
             }
             
-            // --- 原有的播放逻辑 ---
-            // [修改] 增加手动禁用判断
             if (_currentAutoDjMode == AutoDjMode.Active && !IsAutoDjManuallyDisabled)
             {
                 if (NowPlaying is null && !MusicQueue.Any())
@@ -211,9 +196,7 @@ public class MusicBroadcaster
                     await MusicDequeued();
                     if (!_apis.TryGetMusicApi(musicOrder.Service, out var ma))
                     {
-                        _logger.LogError(new ArgumentException($"Unknown api provider {musicOrder.Service}",
-                                nameof(musicOrder.Service)), "{MusicId} with {Api} play failed, skipping...",
-                            musicOrder.Music.Id, musicOrder.Service);
+                        _logger.LogError(new ArgumentException($"Unknown api provider {musicOrder.Service}", nameof(musicOrder.Service)), "{MusicId} with {Api} play failed, skipping...", musicOrder.Music.Id, musicOrder.Service);
                         continue;
                     }
 
@@ -225,9 +208,7 @@ public class MusicBroadcaster
                             NowPlaying = (music, musicOrder.EnqueuerId, musicOrder.EnqueuerName, musicOrder.Service, musicOrder.IsReplay);
                             if (music.NeedProxy)
                             {
-                                await MusicProxyMiddleware.StartProxyAsync(new MusicProxyRequest(music.TargetUrl!,
-                                    "audio/mp4", music.Referer,
-                                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36 Edg/109.0.1518.78"));
+                                await MusicProxyMiddleware.StartProxyAsync(new MusicProxyRequest(music.TargetUrl!, "audio/mp4", music.Referer, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36 Edg/109.0.1518.78"));
                             }
 
                             NowPlayingStartedTime = DateTime.Now;
@@ -238,8 +219,7 @@ public class MusicBroadcaster
                         {
                             if (i >= 2)
                             {
-                                _logger.LogError(ex, "{MusicId} with {Api} play failed, skipping...",
-                                    musicOrder.Music.Id, musicOrder.Service);
+                                _logger.LogError(ex, "{MusicId} with {Api} play failed, skipping...", musicOrder.Music.Id, musicOrder.Service);
                                 await GlobalMessage($"Failed to play {musicOrder.Music.Name}, skip to next music.");
                                 break;
                             }
@@ -262,20 +242,14 @@ public class MusicBroadcaster
     
     private async Task EnqueueRandomSongFromAutoplaylistAsync()
     {
-        // [修改] 检查的数据源从 _autoplaylist 变为 _playHistory
         if (!_playHistory.Any()) return;
-
         try
         {
-            // [修改] 从内存中的播放历史列表里随机挑选一首歌
             var randomHistoryEntry = _playHistory.ElementAt(_random.Next(_playHistory.Count));
-
-            // [修改] 直接使用历史记录中完整的Music对象和ApiName，不再通过ID重新请求
             await EnqueueMusic(randomHistoryEntry.Music, randomHistoryEntry.ApiName, RobotEnqueuerId, isReplay: false);
         }
         catch (Exception ex)
         {
-            // [修改] 更新日志，使其更准确
             _logger.LogError(ex, "自动点歌失败：从播放历史随机点歌时发生错误。");
         }
     }
@@ -316,6 +290,24 @@ public class MusicBroadcaster
     {
         MusicQueue.TopItem(x => x.ActionId == actionId);
         await MusicTopped(actionId, _userManager.FindUserById(operatorId)!.Name);
+    }
+
+    // [新增] 负责全局广播用户上线的方法
+    public async Task BroadcastUserLoginAsync(string userId, string userName)
+    {
+        await _context.Clients.All.SendAsync("OnlineUserLogin", userId, userName);
+    }
+
+    // [新增] 负责全局广播用户下线的方法
+    public async Task BroadcastUserLogoutAsync(string userId)
+    {
+        await _context.Clients.All.SendAsync("OnlineUserLogout", userId);
+    }
+
+    // [新增] 负责全局广播用户改名的方法
+    public async Task BroadcastUserRenameAsync(string userId, string newUserName)
+    {
+        await _context.Clients.All.SendAsync("OnlineUserRename", userId, newUserName);
     }
 
     private async Task SetNowPlaying(PlayableMusic music, string enqueuerName)
