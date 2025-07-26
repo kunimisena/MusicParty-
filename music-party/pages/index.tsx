@@ -201,15 +201,24 @@ export default function Home() {
             setIsAutoDjDisabled(autoDjStatus);
             setIsConnReady(true); // 连接和初始数据加载全部完成后，设置就绪状态
           } catch (err: any) {
-            toastError(t, err);
-            // 降级处理：如果改造后的rename失败，尝试用旧方法获取一下profile
-            try {
-              const fallbackProfile = await getProfile();
-              setUserName(fallbackProfile.name);
-              setCookie(COOKIE_USERNAME_KEY, fallbackProfile.name, 365);
-            } catch (profileError: any) {
-              toastError(t, `获取用户配置也失败了: ${profileError.toString()}`);
-            }
+            toastError(t, `自动恢复用户名失败: ${err.toString()}`);
+            // [修改] 降级处理：在恢复失败时，不再询问服务器。
+            // 我们选择无条件相信浏览器Cookie中存储的名字。
+            setUserName(initialNameCandidate);
+            
+            // 同时，用我们自己Cookie里的正确名字，再次尝试覆盖一次，确保Cookie的正确性。
+            setCookie(COOKIE_USERNAME_KEY, initialNameCandidate, 365);
+
+            // [修改] 成功设置本地状态后，继续执行后续的初始化逻辑
+            const queueData = await conn.current!.getMusicQueue();
+            setQueue(queueData);
+            const users = await conn.current!.getOnlineUsers();
+            setOnlineUsers(users);
+            const chatHistory = await conn.current!.getChatHistory();
+            setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
+            const autoDjStatus = await conn.current!.getAutoDjStatus();
+            setIsAutoDjDisabled(autoDjStatus);
+            setIsConnReady(true);
           }
         })
         .catch((e) => {
