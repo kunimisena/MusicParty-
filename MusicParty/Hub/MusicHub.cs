@@ -69,7 +69,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
                             _logger.LogWarning(ex, "解析聊天记录文件中的某一行时发生错误: {Line}", line);
                         }
                     }
-                    var recentMessages = allMessages.TakeLast(30);
+                    var recentMessages = allMessages.TakeLast(200);
                     _messageQueue.Clear();
                     foreach (var message in recentMessages.Reverse())
                     {
@@ -244,10 +244,15 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         await _musicBroadcaster.TopSong(actionId, Context.User!.Identity!.Name!);
     }
 
-    public async Task Rename(string newName)
+    public async Task<User> Rename(string newName)
     {
-        _userManager.RenameUserById(Context.User!.Identity!.Name!, newName);
-        await OnlineUserRename(Context.User.Identity.Name!);
+        var userId = Context.User!.Identity!.Name!;
+        _userManager.RenameUserById(userId, newName);
+        await OnlineUserRename(userId);
+        
+        // [新增] 在重命名成功后，立即查找并返回最新的用户信息
+        var updatedUser = _userManager.FindUserById(userId)!;
+        return new User(updatedUser.Id, updatedUser.Name);
     }
 
     public record User(string Id, string Name);
@@ -275,7 +280,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         
         _messageQueue.AddFirst(newMsg);
         
-        while (_messageQueue.Count > 100) 
+        while (_messageQueue.Count > 200) 
         {
             _messageQueue.RemoveLast();
         }

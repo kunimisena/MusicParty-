@@ -36,7 +36,7 @@ public class MusicBroadcaster
 
     public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
     private const string _playHistoryPath = "play_history.json";
-    private const int _maxPlayHistoryCount = 100;
+    private const int _maxPlayHistoryCount = 500;
     private readonly LinkedList<PlayHistoryEntry> _playHistory = new();
     private static readonly object _fileLock = new();
 

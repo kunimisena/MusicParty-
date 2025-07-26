@@ -100,6 +100,7 @@ export default function Home() {
   const t = useToast();
 
   const conn = useRef<Connection>();
+
   useEffect(() => {
     if (!conn.current) {
       conn.current = new Connection(
@@ -169,30 +170,29 @@ export default function Home() {
       conn.current
         .start()
         .then(async () => {
-            // 连接成功后，处理用户名
+          // --- 以下是本次修改的核心逻辑 ---
           const preferredNameFromCookie = getCookie(COOKIE_USERNAME_KEY);
           const initialNameCandidate = preferredNameFromCookie || DEFAULT_USERNAME_ON_NO_COOKIE;
-          //console.log(`[INIT] 初始候选用户名 (来自Cookie或默认): ${initialNameCandidate}`);
+          
           try {
-            // 1. 尝试将候选用户名设置到服务器
-            await conn.current!.rename(initialNameCandidate);
-            // toastInfo(t, `尝试设置用户名为: ${initialNameCandidate}`); // 可选的提示
-            console.log(`[INIT] 已发送 rename 请求，用户名为: ${initialNameCandidate}`);
-
-            // 2. 从服务器获取最终确认的用户名
-            const userProfile = await getProfile();
+            // [修改] 调用改造后的 rename 方法，它会直接返回确认后的用户信息
+            // 这一行代码同时完成了“重命名”和“获取用户信息”两个操作，消除了竞态
+            const userProfile = await conn.current!.rename(initialNameCandidate);
+            
+            // 现在 userProfile 直接就是后端返回的最新、最准确的用户对象
             const confirmedName = userProfile.name;
+
             setUserName(confirmedName);
             setCookie(COOKIE_USERNAME_KEY, confirmedName, 365); // 保存服务器确认的名称到Cookie
             console.log(`[INIT] 服务器确认的用户名: ${confirmedName} (已存入Cookie)`);
+            
             if (confirmedName === DEFAULT_USERNAME_ON_NO_COOKIE && !preferredNameFromCookie) {
               toastInfo(t, "欢迎您！请记得修改您的用户名。");
             }
 
-            
-            // 3. 获取其他初始数据
-            const queueData = await conn.current!.getMusicQueue(); // 变量名从 queue 改为 queueData
-            setQueue(queueData); // 使用新的变量名
+            // --- 其他获取初始数据的逻辑不变 ---
+            const queueData = await conn.current!.getMusicQueue();
+            setQueue(queueData);
             const users = await conn.current!.getOnlineUsers();
             setOnlineUsers(users);
             const chatHistory = await conn.current!.getChatHistory();
@@ -202,10 +202,11 @@ export default function Home() {
             setIsConnReady(true); // 连接和初始数据加载全部完成后，设置就绪状态
           } catch (err: any) {
             toastError(t, err);
+            // 降级处理：如果改造后的rename失败，尝试用旧方法获取一下profile
             try {
               const fallbackProfile = await getProfile();
               setUserName(fallbackProfile.name);
-              setCookie(COOKIE_USERNAME_KEY, fallbackProfile.name, 365); // 保存当前服务器名称
+              setCookie(COOKIE_USERNAME_KEY, fallbackProfile.name, 365);
             } catch (profileError: any) {
               toastError(t, `获取用户配置也失败了: ${profileError.toString()}`);
             }
@@ -221,6 +222,8 @@ export default function Home() {
       setInited(true);
     }
   }, [t]);
+
+
   useEffect(() => {
     // 移动端优化代码
     if (typeof window !== 'undefined') { // 确保只在客户端运行

@@ -92,8 +92,9 @@ export class Connection {
   public async topSong(actionId: string): Promise<void> {
     await this._conn.invoke("TopSong", actionId);
   }
-  public async rename(newName: string): Promise<void> {
-    await this._conn.invoke("Rename", newName);
+  public async rename(newName: string): Promise<{ id: string; name: string }> {
+    // [修改] 调用后端的 "Rename" 方法，并接收其返回值
+    return await this._conn.invoke("Rename", newName);
   }
   public async getOnlineUsers(): Promise<{ id: string; name: string }[]> {
     return await this._conn.invoke("GetOnlineUsers");
