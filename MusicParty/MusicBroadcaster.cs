@@ -30,7 +30,7 @@ public class MusicBroadcaster
     
     // [新增] 用于控制大扫除频率的变量
     private DateTime _lastSweepTime = DateTime.UtcNow;
-    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(10); // 每10分钟进行一次大扫除
+    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(2); // 每2分钟进行一次大扫除
 
     public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
     private const string _playHistoryPath = "play_history.json";
@@ -144,15 +144,17 @@ public class MusicBroadcaster
                 if (_currentAutoDjMode == AutoDjMode.Active)
                 {
                     _logger.LogInformation("所有用户已离开，自动DJ切换到 Inactive 状态。");
+                    _logger.LogInformation("所有用户已离开，自动点歌机器人按钮已自动恢复为禁用状态。");
                     _currentAutoDjMode = AutoDjMode.Inactive;
+                    IsAutoDjManuallyDisabled = true;
                 }
                 // [修改] 无人时，自动重置手动禁用开关
-                if (IsAutoDjManuallyDisabled)
-                {
-                    IsAutoDjManuallyDisabled = true;
-                    //_logger.LogInformation("所有用户已离开，自动点歌机器人已自动恢复为启用状态。");
-                    _logger.LogInformation("所有用户已离开，自动点歌机器人按钮已自动恢复为禁用状态。");
-                }
+                //if (IsAutoDjManuallyDisabled)
+                //{
+                //    IsAutoDjManuallyDisabled = true;
+                //    _logger.LogInformation("所有用户已离开，自动点歌机器人已自动恢复为启用状态。");
+                //    _logger.LogInformation("所有用户已离开，自动点歌机器人按钮已自动恢复为禁用状态。");
+                //}
             }
             else
             {
