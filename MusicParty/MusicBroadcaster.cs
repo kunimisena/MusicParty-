@@ -20,10 +20,8 @@ public class MusicBroadcaster
 
     private const string RobotEnqueuerId = "auto-dj-robot";
     private const string RobotEnqueuerName = "自动点歌机器人";
-    private const string _autoplaylistPath = "autoplaylist.json";
-    private List<AutoplaylistItem> _autoplaylist = new();
+
     private readonly Random _random = new();
-    private record AutoplaylistItem(string Id, string ApiName);
 
     private enum AutoDjMode { Inactive, Active }
     private AutoDjMode _currentAutoDjMode = AutoDjMode.Inactive;
@@ -48,44 +46,11 @@ public class MusicBroadcaster
         _userManager = userManager;
         _logger = logger;
         
-        LoadAutoplaylist();
+
         LoadPlayHistory();
         Task.Run(Loop);
     }
         
-    private void LoadAutoplaylist()
-    {
-        try
-        {
-            // [修改] 将读取的文件从 _autoplaylistPath 改为 _playHistoryPath
-            if (File.Exists(_playHistoryPath))
-            {
-                var jsonString = File.ReadAllText(_playHistoryPath);
-
-                // [修改] 将JSON解析为播放历史的格式 (List<PlayHistoryEntry>)
-                var history = JsonSerializer.Deserialize<List<PlayHistoryEntry>>(jsonString);
-
-                if (history != null && history.Any())
-                {
-                    // [修改] 核心转换逻辑：
-                    // 将解析出的、结构复杂的“播放历史”列表，
-                    // 转换为机器人逻辑原本期望的、结构简单的 AutoplaylistItem 列表。
-                    // 这个过程只提取每首歌的 ID 和 ApiName。
-                    _autoplaylist = history
-                        .Select(entry => new AutoplaylistItem(entry.Music.Id, entry.ApiName))
-                        .ToList();
-
-                    // [修改] 更新日志信息，使其能准确反映数据来源
-                    _logger.LogInformation("成功从播放历史加载机器人播放列表，共 {Count} 首歌曲。", _autoplaylist.Count);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            // [修改] 更新日志信息
-            _logger.LogError(ex, "从播放历史加载机器人播放列表失败。");
-        }
-    }
 
     private void LoadPlayHistory()
     {
@@ -150,7 +115,7 @@ public class MusicBroadcaster
         
         // [新增] 在播放历史更新后，立即重新加载机器人的播放列表
         // 这会从刚刚更新过的 play_history.json 文件中读取最新的歌曲列表
-        LoadAutoplaylist();
+
     }
 
 
@@ -230,7 +195,7 @@ public class MusicBroadcaster
             // [修改] 增加手动禁用判断
             if (_currentAutoDjMode == AutoDjMode.Active && !IsAutoDjManuallyDisabled)
             {
-                if (NowPlaying is null && !MusicQueue.Any() && _autoplaylist.Any())
+                if (NowPlaying is null && !MusicQueue.Any())
                 {
                     _logger.LogInformation("自动DJ处于 Active 状态，且房间为空，执行点歌。");
                     await EnqueueRandomSongFromAutoplaylistAsync();
@@ -295,17 +260,21 @@ public class MusicBroadcaster
     
     private async Task EnqueueRandomSongFromAutoplaylistAsync()
     {
-        if (!_autoplaylist.Any()) return;
-        var randomSongItem = _autoplaylist[_random.Next(_autoplaylist.Count)];
+        // [修改] 检查的数据源从 _autoplaylist 变为 _playHistory
+        if (!_playHistory.Any()) return;
+
         try
         {
-            if (!_apis.TryGetMusicApi(randomSongItem.ApiName, out var ma)) return;
-            var music = await ma.GetMusicByIdAsync(randomSongItem.Id);
-            await EnqueueMusic(music, randomSongItem.ApiName, RobotEnqueuerId, isReplay: false);
+            // [修改] 从内存中的播放历史列表里随机挑选一首歌
+            var randomHistoryEntry = _playHistory.ElementAt(_random.Next(_playHistory.Count));
+
+            // [修改] 直接使用历史记录中完整的Music对象和ApiName，不再通过ID重新请求
+            await EnqueueMusic(randomHistoryEntry.Music, randomHistoryEntry.ApiName, RobotEnqueuerId, isReplay: false);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "自动点歌失败，歌曲ID: {SongId}, API: {ApiName}", randomSongItem.Id, randomSongItem.ApiName);
+            // [修改] 更新日志，使其更准确
+            _logger.LogError(ex, "自动点歌失败：从播放历史随机点歌时发生错误。");
         }
     }
     
