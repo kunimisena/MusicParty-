@@ -169,7 +169,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
                 _logger.LogInformation("User {UserId} did not reconnect in 5s. Proceeding with cleanup.", userId);
                 
-                _userManager.RemoveUser(userId); 
+                //_userManager.RemoveUser(userId); 
                 OnlineUsers.Remove(userId); 
                 
                 // [修改] 委托给 MusicBroadcaster 执行广播

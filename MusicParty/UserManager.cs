@@ -11,7 +11,7 @@ public class UserManager
     private readonly List<User> _users = new();
     
     // [新增] 定义用户超时时间，例如2分钟
-    private static readonly TimeSpan UserTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan UserTimeout = TimeSpan.FromMinutes(1);
 
     public UserManager(IHttpContextAccessor accessor)
     {

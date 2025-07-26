@@ -27,7 +27,7 @@ public class MusicBroadcaster
     private readonly TimeSpan _userActivityTimeout = TimeSpan.FromSeconds(5);
     
     private DateTime _lastSweepTime = DateTime.UtcNow;
-    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(2);
+    private readonly TimeSpan _sweepInterval = TimeSpan.FromMinutes(1);
 
     public record PlayHistoryEntry(Music Music, string ApiName, string EnqueuerId, string EnqueuerName, DateTime Timestamp);
     private const string _playHistoryPath = "play_history.json";
