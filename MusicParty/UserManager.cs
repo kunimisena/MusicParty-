@@ -1,118 +1,177 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
-using System.Collections.Generic; // [新增] 为 List<User> FindAll 添加引用
-using System.Linq; // [新增] 为 .ToList() 添加引用
+using System.Collections.Concurrent;
+using System.Text.Json;
 
 namespace MusicParty;
 
+/// <summary>
+/// "户籍处": 管理用户核心档案 (Profile) 的服务。
+/// 负责档案的持久化存储和读取。
+/// </summary>
 public class UserManager
 {
     private readonly IHttpContextAccessor _accessor;
-    private readonly List<User> _users = new();
-    
-    // [新增] 定义用户超时时间，例如2分钟
-    private static readonly TimeSpan UserTimeout = TimeSpan.FromMinutes(1);
+    private readonly ILogger<UserManager> _logger;
 
-    public UserManager(IHttpContextAccessor accessor)
+    // [核心修改] "户籍库": 使用线程安全的字典在内存中存储所有用户档案。
+    private readonly ConcurrentDictionary<string, User> _users = new();
+
+    // [核心修改] 档案持久化相关设置
+    private const string UsersFilePath = "users.json";
+    private static readonly object _fileLock = new();
+    private static readonly TimeSpan _inactiveProfileCleanupThreshold = TimeSpan.FromDays(180);
+
+    public UserManager(IHttpContextAccessor accessor, ILogger<UserManager> logger)
     {
         _accessor = accessor;
+        _logger = logger;
+
+        // [核心修改] 服务器启动时，从文件加载所有用户档案。
+        LoadUsersFromFile();
     }
 
-    public bool HasOnlineUsers()
+    private void LoadUsersFromFile()
     {
-        return _users.Any();
-    }
-
-    public void RemoveUser(string id)
-    {
-        _users.RemoveAll(x => x.Id == id);
-    }
-    
-    public void CreateUser(string id, string name)
-    {
-        if (FindUserById(id) is null)
+        lock (_fileLock)
         {
-            _users.Add(new User(id, name, new()));
+            try
+            {
+                if (!File.Exists(UsersFilePath)) return;
+
+                var json = File.ReadAllText(UsersFilePath);
+                var usersFromFile = JsonSerializer.Deserialize<List<User>>(json);
+
+                if (usersFromFile != null)
+                {
+                    foreach (var user in usersFromFile)
+                    {
+                        _users.TryAdd(user.Id, user);
+                    }
+                    _logger.LogInformation("成功从 {FilePath} 加载了 {Count} 个用户档案。", UsersFilePath, _users.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "从 {FilePath} 加载用户档案失败。", UsersFilePath);
+            }
         }
     }
 
-    // [新增] 公开方法，用于接收心跳并更新用户的最后活动时间
-    public void UpdateUserHeartbeat(string id)
+    private async Task SaveUsersToFileAsync()
     {
-        var user = FindUserById(id);
-        if (user is not null)
+        // [核心修改] 异步地、带锁地将整个用户库写入文件。
+        await Task.Run(() =>
         {
-            user.LastHeartbeat = DateTime.UtcNow;
-        }
+            lock (_fileLock)
+            {
+                try
+                {
+                    // [核心修改] 清理机制：只保留最近180天内活跃过的用户档案。
+                    var activeUsers = _users.Values
+                        .Where(u => DateTime.UtcNow - u.LastSeen < _inactiveProfileCleanupThreshold)
+                        .ToList();
+
+                    var json = JsonSerializer.Serialize(activeUsers, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(UsersFilePath, json);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "写入用户档案到 {FilePath} 失败。", UsersFilePath);
+                }
+            }
+        });
     }
-
-    // [新增] 核心方法：清理所有心跳超时的非活动用户（“幽灵”）
-    // 返回被清理的用户ID列表，以便广播通知
-    public List<string> ClearInactiveUsers()
-    {
-        var inactiveUserIds = _users
-            .Where(u => DateTime.UtcNow - u.LastHeartbeat > UserTimeout)
-            .Select(u => u.Id)
-            .ToList();
-
-        if (inactiveUserIds.Any())
-        {
-            _users.RemoveAll(u => inactiveUserIds.Contains(u.Id));
-        }
-
-        return inactiveUserIds;
-    }
-
 
     public async Task LoginAsync(string id)
     {
-        var claims = new List<Claim>()
-        {
-            new(ClaimTypes.Name, id)
-        };
+        var claims = new List<Claim> { new(ClaimTypes.Name, id) };
         var user = new ClaimsPrincipal(new ClaimsIdentity(claims, "any"));
-        await _accessor.HttpContext!.SignInAsync("Cookies", user, new AuthenticationProperties()
+        await _accessor.HttpContext!.SignInAsync("Cookies", user, new AuthenticationProperties
         {
             ExpiresUtc = DateTimeOffset.MaxValue
         });
-        CreateUser(id, id);
+
+        // 如果是新用户，则创建档案并保存
+        if (!_users.ContainsKey(id))
+        {
+            CreateUser(id, id);
+        }
     }
 
-    public async Task LogoutAsync(string id)
+    public void CreateUser(string id, string name)
     {
-        await _accessor.HttpContext!.SignOutAsync("Cookies");
-        RemoveUser(id);
+        if (_users.ContainsKey(id)) return;
+
+        var newUser = new User(id, name);
+        if (_users.TryAdd(id, newUser))
+        {
+            // 档案变更，立即异步保存到文件
+            _ = SaveUsersToFileAsync();
+        }
     }
 
     public User? FindUserById(string id)
     {
-        return _users.Find(x => x.Id == id);
+        _users.TryGetValue(id, out var user);
+        return user;
     }
 
-    public void RenameUserById(string id, string newName)
+    public async Task RenameUserById(string id, string newName)
     {
-        var user = FindUserById(id);
-        if (user is null) throw new ArgumentException($"No user whose id is {id}.", nameof(id));
-        var bindings = user.MusicApiServiceBindings;
-        var lastHeartbeat = user.LastHeartbeat; // 保留最后心跳时间
-
-        _users.Remove(user);
-        
-        // [修改] 创建新用户记录时，保留其绑定信息和最后心跳时间
-        var newUser = new User(id, newName, bindings)
+        if (!_users.TryGetValue(id, out var oldUser))
         {
-            LastHeartbeat = lastHeartbeat
-        };
-        _users.Add(newUser);
+            throw new ArgumentException($"No user whose id is {id}.", nameof(id));
+        }
+
+        var newUser = oldUser with { Name = newName, LastSeen = DateTime.UtcNow };
+
+        if (_users.TryUpdate(id, newUser, oldUser))
+        {
+            // 档案变更，立即异步保存到文件
+            await SaveUsersToFileAsync();
+        }
     }
 
-    public void BindMusicApiService(string id, string apiName, string identifier)
+    public async Task BindMusicApiService(string id, string apiName, string identifier)
     {
-        var user = FindUserById(id);
-        if (user is null) throw new ArgumentException($"No user whose id is {id}.", nameof(id));
-        if (user.MusicApiServiceBindings.ContainsKey(apiName))
-            user.MusicApiServiceBindings[apiName] = identifier;
-        else
-            user.MusicApiServiceBindings.Add(apiName, identifier);
+        if (!_users.TryGetValue(id, out var oldUser))
+        {
+            throw new ArgumentException($"No user whose id is {id}.", nameof(id));
+        }
+
+        var newBindings = new Dictionary<string, string>(oldUser.MusicApiServiceBindings);
+        newBindings[apiName] = identifier;
+
+        var newUser = oldUser with { MusicApiServiceBindings = newBindings, LastSeen = DateTime.UtcNow };
+
+        if (_users.TryUpdate(id, newUser, oldUser))
+        {
+            // 档案变更，立即异步保存到文件
+            await SaveUsersToFileAsync();
+        }
     }
+
+    /// <summary>
+    /// [核心修改] 当用户上线时，更新其 "LastSeen" 时间。
+    /// 这个方法由 "海关"(MusicHub) 在用户连接时调用。
+    /// </summary>
+    public void UpdateUserLastSeen(string id)
+    {
+        if (_users.TryGetValue(id, out var oldUser))
+        {
+            // 只有当LastSeen超过1小时才更新并存盘，避免过于频繁的IO
+            if (DateTime.UtcNow - oldUser.LastSeen > TimeSpan.FromHours(1))
+            {
+                var newUser = oldUser with { LastSeen = DateTime.UtcNow };
+                if (_users.TryUpdate(id, newUser, oldUser))
+                {
+                    _ = SaveUsersToFileAsync();
+                }
+            }
+        }
+    }
+    
+    // [核心修改] 移除所有与在线状态/心跳相关的旧方法，如 HasActiveUsers, UpdateUserHeartbeat 等。
+    // UserManager 只关心档案，不关心会话。
 }

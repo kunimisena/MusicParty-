@@ -6,24 +6,21 @@ using MusicParty.MusicApi.Bilibili;
 using MusicParty.MusicApi.KuGouMusic;
 using MusicParty.MusicApi.NeteaseCloudMusic;
 using MusicParty.MusicApi.QQMusic;
-// [新增] 引入 System.Text.Json 以使用 JsonNamingPolicy
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-// [修改] 配置 Controller 的 JSON 序列化选项，使其输出 camelCase 格式
+// 控制器和SignalR的JSON命名策略配置，保持camelCase，这是很好的实践。
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
 });
 
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// [修改] 配置 SignalR 的 JSON 序列化选项，使其也输出 camelCase 格式
 builder.Services.AddSignalR().AddJsonProtocol(options =>
 {
     options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -43,7 +40,7 @@ if (bool.Parse(builder.Configuration["MusicApi:NeteaseCloudMusic:Enabled"]))
     api.Login();
     musicApiList.Add(api);
 }
-
+// ... (其他音乐API的加载逻辑保持不变)
 if (bool.Parse(builder.Configuration["MusicApi:QQMusic:Enabled"]))
 {
     var api = new QQMusicApi(
@@ -73,15 +70,28 @@ if (bool.Parse(builder.Configuration["MusicApi:KuGouMusic:Enabled"]))
     musicApiList.Add(api);
 }
 
-// Add more music api provider in the future.
 if (musicApiList.Count == 0)
     throw new Exception("Cannot start without any music api service.");
 
+// --- 核心服务依赖注入 ---
+// 以下的单例注册(Singleton)对于我们的新架构是完全正确的。
+
+// 注册所有音乐API服务
 builder.Services.AddSingleton<IEnumerable<IMusicApi>>(musicApiList);
+// 注册HttpContext访问器，UserManager需要用它来处理登录
 builder.Services.AddHttpContextAccessor();
+
+// [设计哲学体现] 注册 "户籍处" (UserManager) 为单例。
+// ASP.NET Core的DI容器会自动为它注入所需的 ILogger<UserManager>。
 builder.Services.AddSingleton<UserManager>();
+
+// 注册身份验证服务
 builder.Services.AddAuthentication("Cookies").AddCookie("Cookies");
+// 注册代理服务
 builder.Services.AddProxies();
+
+// [设计哲学体现] 注册 "决策者" (MusicBroadcaster) 为单例。
+// DI容器会自动为它注入所需的 IHubContext<MusicHub>, UserManager, ILogger 等。
 builder.Services.AddSingleton<MusicBroadcaster>();
 
 var app = builder.Build();
@@ -96,14 +106,16 @@ if (app.Environment.IsDevelopment())
 app.UseRouting();
 
 app.UseAuthentication();
-
 app.UseAuthorization();
 
+// 使用自定义的预处理中间件，它负责确保每个用户都有身份(Cookie)
 app.UsePreprocess();
 
 app.UseEndpoints(endpoints =>
 {
     endpoints.MapControllers();
+    // [设计哲学体现] 映射 "海关" (MusicHub) 的终结点。
+    // 所有注入到MusicHub的依赖（如UserManager, MusicBroadcaster, IHubContext等）都会由DI容器在这里正确处理。
     endpoints.MapHub<MusicHub>("/music");
 });
 
