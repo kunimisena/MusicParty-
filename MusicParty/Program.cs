@@ -1,4 +1,5 @@
 using AspNetCore.Proxy;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using MusicParty;
 using MusicParty.Hub;
 using MusicParty.MusicApi;
@@ -74,24 +75,30 @@ if (musicApiList.Count == 0)
     throw new Exception("Cannot start without any music api service.");
 
 // --- 核心服务依赖注入 ---
-// 以下的单例注册(Singleton)对于我们的新架构是完全正确的。
-
-// 注册所有音乐API服务
 builder.Services.AddSingleton<IEnumerable<IMusicApi>>(musicApiList);
-// 注册HttpContext访问器，UserManager需要用它来处理登录
 builder.Services.AddHttpContextAccessor();
-
-// [设计哲学体现] 注册 "户籍处" (UserManager) 为单例。
-// ASP.NET Core的DI容器会自动为它注入所需的 ILogger<UserManager>。
 builder.Services.AddSingleton<UserManager>();
 
-// 注册身份验证服务
-builder.Services.AddAuthentication("Cookies").AddCookie("Cookies");
-// 注册代理服务
-builder.Services.AddProxies();
+// [核心修改] 显式配置身份验证Cookie，以实现最强持久化
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+    {
+        // 明确设置过期时间为365天，不再依赖框架默认值
+        options.ExpireTimeSpan = TimeSpan.FromDays(365);
+        // 启用滑动过期，活跃用户将永不过期
+        options.SlidingExpiration = true;
+        
+        // 明确将Cookie路径设为根目录，确保全站所有请求都携带此Cookie
+        options.Cookie.Path = "/";
+        // 明确设置SameSite为Lax，这是同源HTTP环境下的最佳实践
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        // 明确将Cookie标记为对网站核心功能至关重要，以尽可能避免被浏览器策略性地忽略
+        options.Cookie.IsEssential = true;
+        // 明确安全策略与请求一致，这是在HTTP环境下运行的必要条件
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    });
 
-// [设计哲学体现] 注册 "决策者" (MusicBroadcaster) 为单例。
-// DI容器会自动为它注入所需的 IHubContext<MusicHub>, UserManager, ILogger 等。
+builder.Services.AddProxies();
 builder.Services.AddSingleton<MusicBroadcaster>();
 
 var app = builder.Build();
@@ -108,14 +115,11 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// 使用自定义的预处理中间件，它负责确保每个用户都有身份(Cookie)
 app.UsePreprocess();
 
 app.UseEndpoints(endpoints =>
 {
     endpoints.MapControllers();
-    // [设计哲学体现] 映射 "海关" (MusicHub) 的终结点。
-    // 所有注入到MusicHub的依赖（如UserManager, MusicBroadcaster, IHubContext等）都会由DI容器在这里正确处理。
     endpoints.MapHub<MusicHub>("/music");
 });
 
