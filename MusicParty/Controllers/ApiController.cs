@@ -30,9 +30,9 @@ public class ApiController : ControllerBase
     }
 
     [HttpGet, Route("Rename/{newName}"), Authorize]
-    public IActionResult Rename(string newName)
+    public async Task<IActionResult> Rename(string newName)
     {
-        _userManager.RenameUserById(HttpContext.User.Identity!.Name!, newName);
+        await _userManager.RenameUserById(HttpContext.User.Identity!.Name!, newName);
         return Ok();
     }
 
@@ -44,12 +44,15 @@ public class ApiController : ControllerBase
         return Ok(await ma!.SearchUserAsync(keyword));
     }
 
+    // [修改] 将此方法也变为异步，以正确处理警告 CS4014
     [HttpGet, Route("{apiName}/bind/{identifier}"), Authorize]
-    public IActionResult Bind(string apiName, string identifier)
+    public async Task<IActionResult> Bind(string apiName, string identifier)
     {
         if (!_musicApis.TryGetMusicApi(apiName, out _))
             return BadRequest($"Unknown api provider {apiName}.".BuildResponseMessageWithCode(1));
-        _userManager.BindMusicApiService(HttpContext.User.Identity!.Name!, apiName, identifier);
+        
+        // [修改] 添加 await，确保在返回OK之前，绑定操作已完成
+        await _userManager.BindMusicApiService(HttpContext.User.Identity!.Name!, apiName, identifier);
         return Ok();
     }
 
@@ -70,9 +73,21 @@ public class ApiController : ControllerBase
         if (!_musicApis.TryGetMusicApi(apiName, out var ma))
             return BadRequest($"Unknown api provider {apiName}.".BuildResponseMessageWithCode(1));
 
-        var playlists = await ma!.GetUserPlayListAsync(identifier!);
-
-        return Ok(playlists);
+        try
+        {
+            var playlists = await ma!.GetUserPlayListAsync(identifier!);
+            return Ok(playlists);
+        }
+        catch (LoginException ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch playlists from {ApiName} due to an authentication error. This is expected if the cookie has expired.", apiName);
+            return Unauthorized(ex.Message.BuildResponseMessageWithCode(5));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An unexpected error occurred while fetching playlists from {ApiName}.", apiName);
+            return StatusCode(500, $"An unexpected error occurred on the server.".BuildResponseMessageWithCode(99));
+        }
     }
 
     [HttpGet, Route("{apiName}/playlistmusics/{id}"), Authorize]

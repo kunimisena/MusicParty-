@@ -72,7 +72,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         var session = new UserSession(userId, DateTime.UtcNow);
 
         _sessions[userId] = session;
-        _logger.LogInformation("User connected. Session created for {UserId}.", userId);
+        //_logger.LogInformation("User connected. Session created for {UserId}.", userId);
         
         _userManager.UpdateUserLastSeen(userId);
 
@@ -98,7 +98,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         if (_sessions.TryRemove(userId, out _))
         {
-            _logger.LogInformation("User disconnected. Session removed for {UserId}.", userId);
+            //_logger.LogInformation("User disconnected. Session removed for {UserId}.", userId);
             await OnlineUserLogout(userId);
         }
 

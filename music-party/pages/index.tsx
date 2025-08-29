@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import React, { useEffect, useRef, useState, useCallback } from 'react'; // [新增] 引入 useCallback
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Connection, Music, MusicOrderAction } from '../src/api/musichub';
 import {
   Text, Button, Card, CardBody, CardHeader, Grid, GridItem, Heading, Input, ListItem,
@@ -22,10 +22,25 @@ import { PlayHistory } from '../src/api/playhistory';
 // --- 类型定义 ---
 type OnlineUser = { id: string; name: string };
 
-// --- Cookie 辅助函数 (无变化) ---
+// --- Cookie 和 LocalStorage 辅助函数 ---
 const COOKIE_USERNAME_KEY = 'chat_username_preference';
+const LOCALSTORAGE_USERID_KEY = 'music_party_user_id'; // [新增] 用于在LocalStorage中存储用户ID的键
 const DEFAULT_USERNAME_ON_NO_COOKIE = "请设置用户名";
 
+// --- LocalStorage 辅助函数 [新增] ---
+// 使用LocalStorage来持久化存储用户ID，因为它比Cookie更不容易被浏览器自动清除
+const getPersistentUserId = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(LOCALSTORAGE_USERID_KEY);
+};
+
+const setPersistentUserId = (id: string) => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(LOCALSTORAGE_USERID_KEY, id);
+};
+
+
+// --- Cookie 辅助函数 (无变化) ---
 const getCookie = (name: string): string | null => {
   if (typeof document === 'undefined') return null;
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
@@ -102,7 +117,6 @@ export default function Home() {
   const [userName, setUserName] = useState('');
   const [newName, setNewName] = useState('');
   
-  // [核心修改] 使用 Map 来存储在线用户，以用户ID为键，保证唯一性
   const [onlineUsers, setOnlineUsers] = useState<Map<string, OnlineUser>>(new Map());
 
   const [inited, setInited] = useState(false);
@@ -115,7 +129,6 @@ export default function Home() {
   const conn = useRef<Connection>();
   const isSyncing = useRef(false);
 
-  // [核心修改] 将状态同步逻辑提取到 useCallback 中，避免在 useEffect 依赖中频繁创建
   const syncIdentityAndState = useCallback(async () => {
     if (!conn.current || isSyncing.current) return;
 
@@ -125,11 +138,15 @@ export default function Home() {
     try {
       const preferredName = getCookie(COOKIE_USERNAME_KEY) || DEFAULT_USERNAME_ON_NO_COOKIE;
       const userProfile = await conn.current.rename(preferredName);
+      
+      // [核心修改] 将服务器返回的权威ID持久化存储到LocalStorage
+      // 这样即使用户的Cookie丢失，我们也能通过URL参数找回身份
+      setPersistentUserId(userProfile.id);
+
       setUserName(userProfile.name);
       setCookie(COOKIE_USERNAME_KEY, userProfile.name, 365);
 
       const usersFromServer = await conn.current.getOnlineUsers();
-      // [核心修改] 将服务器返回的数组转换为 Map
       setOnlineUsers(new Map(usersFromServer.map(u => [u.id, u])));
 
       const queueData = await conn.current.getMusicQueue();
@@ -140,22 +157,33 @@ export default function Home() {
       const autoDjStatus = await conn.current.getAutoDjStatus();
       setIsAutoDjDisabled(autoDjStatus);
 
-      console.log("Sync complete. Current user:", userProfile.name);
+      console.log("Sync complete. Current user ID:", userProfile.id, "Name:", userProfile.name);
     } catch (err) {
       console.error("Failed to sync identity and state:", err);
       toastError(t, "与服务器同步失败，请尝试刷新页面。");
     } finally {
       isSyncing.current = false;
     }
-  }, [t]); // 依赖 t (useToast)
+  }, [t]);
 
 
   useEffect(() => {
-    if (conn.current) return; // 防止重复初始化
+    if (conn.current) return;
 
-    // [核心修改] 所有的 SignalR 事件回调现在都使用函数式更新，以确保它们总是基于最新的状态进行操作
+    // [核心修改] 动态构建SignalR Hub的URL
+    // 优先从LocalStorage读取用户ID，如果存在，则将其作为查询参数附加到URL上
+    // 这是保证移动端重连时身份不丢失的关键
+    let hubUrl = `${window.location.origin}/music`;
+    const persistentId = getPersistentUserId();
+    if (persistentId) {
+      hubUrl += `?userId=${persistentId}`;
+      console.log(`Connecting with persistent UserID: ${persistentId}`);
+    } else {
+      console.log("No persistent UserID found, connecting as new user.");
+    }
+
     conn.current = new Connection(
-      `${window.location.origin}/music`,
+      hubUrl, // 使用我们刚刚构建的URL
       (music, enqueuerName, playedTime) => {
         setSrc(music.url);
         setNowPlaying({ music, enqueuer: enqueuerName });
@@ -175,7 +203,6 @@ export default function Home() {
       },
       (operatorName, _) => toastInfo(t, `${operatorName} 切到了下一首歌`),
       
-      // [核心修改] 用户上线/下线/改名的逻辑现在是幂等的
       (id, name) => {
         if (isSyncing.current) return;
         setOnlineUsers(prevMap => new Map(prevMap).set(id, { id, name }));
@@ -229,7 +256,7 @@ export default function Home() {
 
     getMusicApis().then(setApis);
     setInited(true);
-  }, [syncIdentityAndState, t]); // 依赖于稳定版的 syncIdentityAndState
+  }, [syncIdentityAndState, t]);
 
 
   useEffect(() => {
@@ -243,7 +270,6 @@ export default function Home() {
 
   useEffect(() => {
    if (!isConnReady || !conn.current) return;
-   // [核心修改] 心跳发送周期调整为30秒
    const heartbeatInterval = setInterval(() => {
      console.log("Sending heartbeat...");
      conn.current?.heartbeat();
@@ -303,8 +329,11 @@ export default function Home() {
                                   return;
                                 }
                                 try {
-                                  await conn.current!.rename(newName.trim());
-                                  const user = await getProfile();
+                                  // [核心修改] rename 成功后，服务器返回的 profile 中包含权威 ID
+                                  const user = await conn.current!.rename(newName.trim());
+                                  // [核心修改] 再次确保存储的是最新的权威ID
+                                  setPersistentUserId(user.id);
+                                  
                                   setUserName(user.name);
                                   setCookie(COOKIE_USERNAME_KEY, user.name, 365);
                                   toastInfo(t, `名字已成功修改为: ${user.name}`);
@@ -347,7 +376,6 @@ export default function Home() {
             <CardHeader><Heading>在线</Heading></CardHeader>
             <CardBody>
               <UnorderedList>
-                {/* [核心修改] 渲染 Map 中的用户 */}
                 {Array.from(onlineUsers.values()).map((u) => (
                   <ListItem key={u.id}>{u.name}</ListItem>
                 ))}
