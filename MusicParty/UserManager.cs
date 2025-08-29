@@ -84,28 +84,22 @@ public class UserManager
     public async Task LoginAsync(string id)
     {
         var claims = new List<Claim> { new(ClaimTypes.Name, id) };
-        var user = new ClaimsPrincipal(new ClaimsIdentity(claims, "Cookies")); // Schema name should match
+        var user = new ClaimsPrincipal(new ClaimsIdentity(claims, "Cookies")); 
         
-        // [最终修复] 在登录时明确指定Cookie是持久化的
         var authProperties = new AuthenticationProperties
         {
-            // 明确告知认证系统，这是一个持久化登录，不是临时的会话。
-            // 这是解决问题的最关键一行。
             IsPersistent = true,
-
-            // 设置一个非常长的过期时间，与 Program.cs 中的配置保持一致
             ExpiresUtc = DateTimeOffset.UtcNow.AddDays(365),
-
-            // 允许在身份验证票据过期前自动刷新
             AllowRefresh = true
         };
 
         await _accessor.HttpContext!.SignInAsync("Cookies", user, authProperties);
 
-        // 如果是新用户，则创建档案并保存
+        // [分支1688修改] 登录时，如果用户档案不存在，则创建它。
+        // 这是为了确保即使用户的cookie有效但档案丢失，也能在此处得到重建。
         if (!_users.ContainsKey(id))
         {
-            CreateUser(id, id);
+            CreateUser(id, id); // 使用ID作为默认名
         }
     }
 
@@ -116,7 +110,6 @@ public class UserManager
         var newUser = new User(id, name);
         if (_users.TryAdd(id, newUser))
         {
-            // 档案变更，立即异步保存到文件
             _ = SaveUsersToFileAsync();
         }
     }
@@ -129,49 +122,77 @@ public class UserManager
 
     public async Task RenameUserById(string id, string newName)
     {
+        // [分支1688修改] 核心容错逻辑
+        // 如果用户在内存中不存在（例如 users.json 被手动清理），则不再抛出异常，
+        // 而是为这个来自有效Cookie的ID重新创建一个档案。
         if (!_users.TryGetValue(id, out var oldUser))
         {
-            throw new ArgumentException($"No user whose id is {id}.", nameof(id));
+            _logger.LogWarning("用户 {UserId} 在档案中不存在，将为其重建档案。", id);
+            var newUser = new User(id, newName);
+            if (_users.TryAdd(id, newUser))
+            {
+                await SaveUsersToFileAsync();
+            }
         }
-
-        var newUser = oldUser with { Name = newName, LastSeen = DateTime.UtcNow };
-
-        if (_users.TryUpdate(id, newUser, oldUser))
+        else
         {
-            await SaveUsersToFileAsync();
+            // 如果用户存在，则正常更新。
+            var updatedUser = oldUser with { Name = newName, LastSeen = DateTime.UtcNow };
+            if (_users.TryUpdate(id, updatedUser, oldUser))
+            {
+                await SaveUsersToFileAsync();
+            }
         }
     }
 
     public async Task BindMusicApiService(string id, string apiName, string identifier)
     {
+        // [分支1688修改] 核心容错逻辑
+        // 同样地，如果用户档案不存在，则为其创建新档案并直接添加绑定信息。
         if (!_users.TryGetValue(id, out var oldUser))
         {
-            throw new ArgumentException($"No user whose id is {id}.", nameof(id));
+            _logger.LogWarning("用户 {UserId} 在档案中不存在，将为其重建档案并绑定服务。", id);
+            var newBindings = new Dictionary<string, string> { [apiName] = identifier };
+            var newUser = new User(id, id) { MusicApiServiceBindings = newBindings }; // 默认名使用ID
+            if (_users.TryAdd(id, newUser))
+            {
+                await SaveUsersToFileAsync();
+            }
         }
-
-        var newBindings = new Dictionary<string, string>(oldUser.MusicApiServiceBindings);
-        newBindings[apiName] = identifier;
-
-        var newUser = oldUser with { MusicApiServiceBindings = newBindings, LastSeen = DateTime.UtcNow };
-
-        if (_users.TryUpdate(id, newUser, oldUser))
+        else
         {
-            await SaveUsersToFileAsync();
+            // 如果用户存在，则正常更新绑定。
+            var newBindings = new Dictionary<string, string>(oldUser.MusicApiServiceBindings)
+            {
+                [apiName] = identifier
+            };
+            var updatedUser = oldUser with { MusicApiServiceBindings = newBindings, LastSeen = DateTime.UtcNow };
+            if (_users.TryUpdate(id, updatedUser, oldUser))
+            {
+                await SaveUsersToFileAsync();
+            }
         }
     }
     
     public void UpdateUserLastSeen(string id)
     {
+        // [分支1688修改] 核心容错逻辑
+        // 在更新最后上线时间时，如果发现用户档案不存在，也为其重建。
         if (_users.TryGetValue(id, out var oldUser))
         {
             if (DateTime.UtcNow - oldUser.LastSeen > TimeSpan.FromHours(1))
             {
-                var newUser = oldUser with { LastSeen = DateTime.UtcNow };
-                if (_users.TryUpdate(id, newUser, oldUser))
+                var updatedUser = oldUser with { LastSeen = DateTime.UtcNow };
+                if (_users.TryUpdate(id, updatedUser, oldUser))
                 {
                     _ = SaveUsersToFileAsync();
                 }
             }
+        }
+        else
+        {
+            _logger.LogWarning("用户 {UserId} 在档案中不存在，将为其重建档案（来自UpdateUserLastSeen调用）。", id);
+            CreateUser(id, id); // 使用CreateUser方法来创建并保存
         }
     }
 }
