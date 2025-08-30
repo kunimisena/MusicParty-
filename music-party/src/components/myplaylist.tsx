@@ -34,10 +34,16 @@ export const MyPlaylist = (props: {
 
   useEffect(() => {
     api.getBindInfo().then((info: { key: string; value: string }[]) => {
+      const apiNames = info.map((x) => x.key);
       setApis(info.map((x) => x.key));
       if (info.length > 0) {
-        const defaultApi = info[0].key;
-        setApiName(defaultApi);
+        // 从 localStorage 读取上次选择的 apiName
+        const storedApiName = localStorage.getItem('myPlaylistApiName');
+        if (storedApiName && apiNames.includes(storedApiName)) {
+          setApiName(storedApiName);
+        } else {
+          setApiName(info[0].key);
+        }
       } else {
         setNeedBind(true);
         setCanshow(true);
@@ -94,8 +100,12 @@ export const MyPlaylist = (props: {
               <MenuList>
                 {apis.map((a) => (
                   <MenuItem 
-                    key={a} 
-                    onClick={() => setApiName(a)}
+                    key={a}
+                    onClick={() => {
+                      setApiName(a);
+                      // 将新的 apiName 保存到 localStorage
+                      localStorage.setItem('myPlaylistApiName', a);
+                    }}
                   >
                     {a}
                   </MenuItem>

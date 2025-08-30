@@ -7,11 +7,18 @@ import { toastEnqueueOk, toastError } from '../utils/toast';
 export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
   const [id, setId] = useState('');
   const [apiName, setApiName] = useState('');
+  const [initialized, setInitialized] = useState(false);
   const t = useToast();
 
   useEffect(() => {
     if (props.apis && props.apis.length > 0) {
-      setApiName(props.apis[0]);
+      // 从 localStorage 读取上次选择的 apiName
+      const storedApiName = localStorage.getItem('musicSelectorApiName');
+      if (storedApiName && props.apis.includes(storedApiName)) {
+        setApiName(storedApiName);
+      } else {
+        setApiName(props.apis[0]);
+      }
     }
   }, [props.apis]);
 
@@ -38,8 +45,12 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           <MenuList>
             {props.apis.map((a) => (
               <MenuItem 
-                key={a} 
-                onClick={() => setApiName(a)}
+                key={a}
+                  onClick={() => {
+                  setApiName(a);
+                  // 将新的 apiName 保存到 localStorage
+                  localStorage.setItem('musicSelectorApiName', a);
+                }}
               >
                 {a}
               </MenuItem>

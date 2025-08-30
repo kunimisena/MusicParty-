@@ -426,7 +426,7 @@ export default function Home() {
         </GridItem>
         <GridItem area={'main'}>
           <Tabs variant='soft-rounded' isLazy>
-            <TabList m={4}><Tab>播放列表</Tab><Tab>从音乐ID点歌</Tab><Tab>从歌单点歌</Tab><Tab>播放历史</Tab></TabList>
+            <TabList m={4}><Tab>播放列表</Tab><Tab>从ID或链接点歌</Tab><Tab>从歌单点歌</Tab><Tab>播放历史</Tab></TabList>
             <TabPanels>
               <TabPanel>
                 <Card>
