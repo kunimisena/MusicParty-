@@ -5,8 +5,13 @@ import {
   Accordion,
   useToast,
   Flex,
-  Select,
+  Button,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
 } from "@chakra-ui/react";
+import { ChevronDownIcon } from '@chakra-ui/icons';
 import { useEffect, useState } from "react";
 import * as api from "../api/api";
 import { toastError } from "../utils/toast";
@@ -46,44 +51,59 @@ export const MyPlaylist = (props: {
       setPlaylists(playlistCache.get(apiName)!);
       setSomeHook((n) => n + 1);
     } else {
+      setCanshow(false); 
       api
         .getMyPlaylist(apiName)
         .then((resp) => {
           setPlaylists(resp);
           setSomeHook((n) => n + 1);
-          setCanshow(true);
           setPlaylistCache((c) => c.set(apiName, resp));
         })
         .catch((err) => {
-          toastError(t, err);
+          toastError(t, err.toString());
+        })
+        .finally(() => {
+            setCanshow(true);
         });
     }
-  }, [apiName]);
+  }, [apiName, playlistCache, t]);
 
   return (
     <Stack>
-      {canshow ? (
-        needBind ? (
-          <Text>
-            请绑定你的音乐平台账户后刷新页面
-          </Text>
-        ) : (
-          <>
-            <Flex flexDirection={"row"} alignItems={"center"} mb={4}>
-              <Text>选择平台</Text>
-              <Select
+      {needBind ? (
+        <Text>请绑定你的音乐平台账户后刷新页面</Text>
+      ) : (
+        <>
+          <Flex flexDirection={"row"} alignItems={"center"} mb={4}>
+            <Text>选择平台</Text>
+            <Menu>
+              <MenuButton
+                as={Button}
+                rightIcon={<ChevronDownIcon />}
                 ml={2}
                 flex={1}
-                onChange={(e) => {
-                  setApiName(e.target.value);
-                }}
-                defaultValue={apiName}
+                textAlign="left"
+                fontWeight="normal"
+                bg="bg.3"
+                color="text.2" // [核心修复] 为按钮本身指定二级字体颜色
+                _hover={{ bg: 'bg.2' }}
+                _active={{ bg: 'bg.2' }}
               >
-                {apis.map((a) => {
-                  return <option key={a}>{a}</option>;
-                })}
-              </Select>
-            </Flex>
+                {apiName || '...'}
+              </MenuButton>
+              <MenuList>
+                {apis.map((a) => (
+                  <MenuItem 
+                    key={a} 
+                    onClick={() => setApiName(a)}
+                  >
+                    {a}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </Menu>
+          </Flex>
+          {canshow ? (
             <Accordion allowMultiple key={someHook}>
               {playlists.map((p) => (
                 <Playlist
@@ -95,18 +115,17 @@ export const MyPlaylist = (props: {
                 />
               ))}
             </Accordion>
-          </>
-        )
-      ) : (
-        <>
-          <Skeleton height="20px" />
-          <Skeleton height="20px" />
-          <Skeleton height="20px" />
-          <Skeleton height="20px" />
-          <Skeleton height="20px" />
-          <Skeleton height="20px" />
+          ) : (
+             <>
+                <Skeleton height="50px" />
+                <Skeleton height="50px" />
+                <Skeleton height="50px" />
+                <Skeleton height="50px" />
+            </>
+          )}
         </>
       )}
     </Stack>
   );
 };
+

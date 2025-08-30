@@ -3,7 +3,6 @@ import type { AppProps } from "next/app";
 import { ChakraProvider, extendTheme, type ThemeConfig } from "@chakra-ui/react";
 import React, { useState, useEffect, useMemo } from 'react';
 
-// --- 主题定义保持不变 ---
 const themes = {
   default: {
     name: '亮色',
@@ -16,7 +15,7 @@ const themes = {
   softDark: {
     name: '暗色',
     colors: {
-      bg: { 1: '#000000ff', 2: '#151514ff', 3: '#242422ff' },
+      bg: { 1: '#000000ff', 2: '#3b3b3bff', 3: '#242422ff' },
       text: { 1: '#e5dfcbff', 2: '#b2ada0ff', 3: '#ff0000ff' },
       buttonScheme: "whiteAlpha",
     },
@@ -96,24 +95,9 @@ export default function App({ Component, pageProps }: AppProps) {
             }
           }
         },
-        Select: {
-            variants: {
-                outline: {
-                    field: { bg: 'bg.3', color: 'text.1' },
-                    icon: { color: 'text.2' }
-                }
-            }
-        },
-        // [核心修复] 为 UnorderedList 和 ListItem 添加更明确的样式
-        UnorderedList: {
+        List: {
             baseStyle: {
-                color: 'text.1' // 确保列表容器的颜色为一级字体色
-            }
-        },
-        ListItem: {
-            baseStyle: {
-                color: 'text.1', // 再次强调列表项的颜色
-                _hover: { bg: 'bg.2' }
+                item: { color: 'text.1', _hover: { bg: 'bg.2' } }
             }
         },
         Tabs: {
@@ -127,10 +111,30 @@ export default function App({ Component, pageProps }: AppProps) {
                 },
             },
         },
+        // [核心修复] 为 Menu 组件的 list 和 item 部分提供完整的、明确的样式
+        Menu: {
+            baseStyle: {
+                // 这是对 <MenuList> (整个下拉框) 的样式
+                list: {
+                    bg: 'bg.3',
+                    borderColor: 'bg.2'
+                },
+                // 这是对 <MenuItem> (每一个选项) 的样式
+                item: {
+                    bg: 'bg.3',      // 背景色：三级背景
+                    color: 'text.2', // 字体色：二级字体
+                    _hover: {
+                        bg: 'bg.2'   // 悬停背景色：二级背景
+                    },
+                    _focus: {        // 键盘聚焦时的样式，保持一致
+                        bg: 'bg.2'
+                    }
+                }
+            }
+        },
         Modal: { baseStyle: { dialog: { bg: 'bg.3' } } },
         Popover: { baseStyle: { content: { bg: 'bg.3' } } },
         Drawer: { baseStyle: { dialog: { bg: 'bg.3' } } },
-        Menu: { baseStyle: { list: { bg: 'bg.3' }, item: { _hover: { bg: 'bg.2' } } } },
         Divider: { baseStyle: { borderColor: 'bg.2' } },
         Accordion: {
             baseStyle: {
