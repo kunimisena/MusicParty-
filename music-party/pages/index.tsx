@@ -344,16 +344,13 @@ export default function Home() {
               <CardHeader>
                  <Heading size="lg" mb={2}>{`欢迎, ${userName}!`}</Heading>
                  <Box color="text.2">
-                    <Text fontSize="md">请改成群内昵称</Text>
-                    <Text fontSize="md">b站id点歌可以通过“@”来输入特定的P（否则默认1P），例如BV1Dv411T7E2@3</Text>
-                    <Text fontSize="md">为了避免卡顿，B站视频最多20min的时长！逾者不予播放</Text>
-                    <Text fontSize="md">网易云和QQ很好理解如何点歌了</Text>
+                    <Text fontSize="md">请将用户名改成群内昵称</Text>
+                    <Text fontSize="md">除了酷狗api，均支持链接直接点歌</Text>
+                    <Text fontSize="md">b站可以通过BV号@P数的形式指定p数，例如BV1aWVEzdE3W@17</Text>
+                    <Text fontSize="md">网易云和QQ音乐可以用id直接点歌</Text>
                     <Text fontSize="md">酷狗只能播放搜索到的第一首歌，因此id点歌直接输入详尽的关键字（例如曲名+歌手）</Text>
-                    <Text fontSize="md" mt={1}>人多的时候，一人播放队列里请只点一首歌哦！（不含正在播放，人少就无所谓了）</Text>
-                    <Text fontSize="md" mt={1}>非必要请勿切歌和置顶！</Text>
+                    <Text fontSize="md" mt={1}>人多的时候，一人播放队列里请只点一首歌哦！（不含正在播放）</Text>
                     <Text fontSize="md" mt={1}>账号绑定没有出现歌单的情况，注意账号的隐私设置！</Text>
-                    <Text fontSize="md" mt={1}>显示出问题可以试试刷新一下网页，或者找找被屏蔽的弹窗</Text>
-                    <Text fontSize="md" mt={1}>手机端兼容性较差的话，请在手机浏览器上切换成电脑端。试试火狐和谷歌浏览器！</Text>
                     <Text fontSize="md" mt={1}>有问题多联系！</Text>
                  </Box>
               </CardHeader>

@@ -2,6 +2,7 @@
 using MusicParty.MusicApi; 
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace MusicParty.MusicApi.QQMusic;
 
@@ -83,7 +84,25 @@ public class QQMusicApi : IMusicApi
 
     public async Task<Music> GetMusicByIdAsync(string id)
     {
-        var ids = id.Split(',');
+        // ====================== START: 新增 URL 兼容逻辑 ======================
+        var musicId = id;
+        
+        // TODO: 留空，请提供 URL 示例
+        var musicRegex = new Regex("/(?:songDetail/|songmid=)([^/&#?]+)");
+
+        var musicMatch = musicRegex.Match(id);
+
+        if (musicMatch.Success)
+        {
+            musicId = musicMatch.Groups[1].Value;
+        }
+        
+        // 确保 songmid 和 mediaid 相同，这是 QQ 音乐的特殊要求
+        var formattedId = $"{musicId},{musicId}";
+        
+        // ====================== END: 新增 URL 兼容逻辑 ======================
+        
+        var ids = formattedId.Split(',');
         var resp = await _http.GetStringAsync(_url + $"/song?songmid={ids[0]}");
         var j = JsonNode.Parse(resp)!;
         if (j["result"]!.GetValue<int>() != 100)
@@ -91,7 +110,7 @@ public class QQMusicApi : IMusicApi
         var name = j["data"]!["track_info"]!["name"]!.GetValue<string>();
         var artists = j["data"]!["track_info"]!["singer"]!.AsArray()
             .Select(x => x!["name"]!.GetValue<string>()).ToArray();
-        return new Music(id, name, artists);
+        return new Music(formattedId, name, artists);
     }
 
     public Task<IEnumerable<Music>> SearchMusicByNameAsync(string name)

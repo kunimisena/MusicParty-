@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace MusicParty.MusicApi.Bilibili;
 
@@ -78,8 +79,26 @@ public class BilibiliApi : IMusicApi
         return true;
     }
 
-    public async Task<Music> GetMusicByIdAsync(string id)
+    public async Task<Music> GetMusicByIdAsync(string idInput)
     {
+        // ====================== START: 新增 URL 兼容逻辑 ======================
+        string id = idInput;
+        
+        // TODO: 留空，请提供 URL 示例
+        var musicRegex = new Regex("BV([^/&#?]+)(?:.*?p=(\\d+))?");
+
+        var musicMatch = musicRegex.Match(idInput);
+        
+        if (musicMatch.Success)
+        {
+            id = musicMatch.Groups[1].Value;
+            if (musicMatch.Groups.Count > 2 && !string.IsNullOrEmpty(musicMatch.Groups[2].Value))
+            {
+                id += $"@{musicMatch.Groups[2].Value}";
+            }
+        }
+        // ====================== END: 新增 URL 兼容逻辑 ======================
+
         // 解析输入（支持 BV1xxx@2 格式）
         string bvid;
         int p = 1; // 默认第1P

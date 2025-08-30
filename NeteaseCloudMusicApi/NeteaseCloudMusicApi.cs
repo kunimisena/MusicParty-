@@ -7,6 +7,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using ZXing.ImageSharp;
 using System;
 using System.Net;
+using System.Text.RegularExpressions;
 
 namespace MusicParty.MusicApi.NeteaseCloudMusic;
 
@@ -212,14 +213,38 @@ public class NeteaseCloudMusicApi : IMusicApi
 
     public async Task<Music> GetMusicByIdAsync(string idInput) // 将参数名改为 idInput 以区分处理后的 id
     {
+        // ====================== START: 新增 URL 兼容逻辑 ======================
+        string id = "";
+        
+        // TODO: 留空，请提供 URL 示例
+        var musicRegex = new Regex("(?<=song\\?id=)(\\d+)");
+        var djRegex = new Regex("(?<=program\\?id=|dj\\?id=)(\\d+)");
+        
+        var musicMatch = musicRegex.Match(idInput);
+        var djMatch = djRegex.Match(idInput);
+
+        if (musicMatch.Success)
+        {
+            id = musicMatch.Groups[1].Value;
+        }
+        else if (djMatch.Success)
+        {
+            id = "id=" + djMatch.Groups[1].Value;
+        }
+        else
+        {
+            id = idInput; // 如果都不匹配，保持原样
+        }
+        // ====================== END: 新增 URL 兼容逻辑 ======================
+
         // 定义电台节目前缀和我们用于打包时长的特殊标记
         const string pidPrefix = "id=";
         const string durationMarker = "duration";
 
-        if (idInput != null && idInput.StartsWith(pidPrefix))
+        if (id != null && id.StartsWith(pidPrefix))
         {
             // --- 处理电台节目 (pid=...) ---
-            string programId = idInput.Substring(pidPrefix.Length);
+            string programId = id.Substring(pidPrefix.Length);
             var requestUrl = $"{_url}/dj/program/detail?id={programId}&cookie={GetCookieEncoded()}";
             
             var resp = await _http.GetStringAsync(requestUrl);
@@ -271,14 +296,14 @@ public class NeteaseCloudMusicApi : IMusicApi
         }
         else // --- 处理普通歌曲ID，逻辑完全不变 ---
         {
-            var resp = await _http.GetStringAsync(_url + $"/song/detail?ids={idInput}&cookie={GetCookieEncoded()}");
+            var resp = await _http.GetStringAsync(_url + $"/song/detail?ids={id}&cookie={GetCookieEncoded()}");
             var j = JsonNode.Parse(resp)!;
             if (j["code"]?.GetValue<int>() != 200 || j["songs"]?.AsArray().Count == 0)
-                throw new Exception($"无法获取音乐 (id={idInput})，消息: {resp}");
+                throw new Exception($"无法获取音乐 (id={id})，消息: {resp}");
             
             var name = j["songs"]![0]!["name"]!.GetValue<string>();
             var ar = j["songs"]![0]!["ar"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()).ToArray();
-            return new Music(idInput, name, ar);
+            return new Music(id, name, ar);
         }
     }
 

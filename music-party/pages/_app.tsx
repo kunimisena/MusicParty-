@@ -8,7 +8,7 @@ const themes = {
     name: '亮色',
     colors: {
       bg: { 1: '#e8e8e8ff', 2: '#f8f0d7ff', 3: '#fdf9edff' },
-      text: { 1: '#000000ff', 2: '#242321ff', 3: '#ff0000ff' },
+      text: { 1: '#000000ff', 2: '#242321ff', 3: '#0083dbff' },
       buttonScheme: "gray",
     },
   },
@@ -16,7 +16,7 @@ const themes = {
     name: '暗色',
     colors: {
       bg: { 1: '#000000ff', 2: '#3b3b3bff', 3: '#242422ff' },
-      text: { 1: '#e5dfcbff', 2: '#b2ada0ff', 3: '#ff0000ff' },
+      text: { 1: '#e5dfcbff', 2: '#b2ada0ff', 3: '#0083dbff' },
       buttonScheme: "whiteAlpha",
     },
   },

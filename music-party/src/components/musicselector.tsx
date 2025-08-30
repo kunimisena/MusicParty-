@@ -56,7 +56,7 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           flex={1}
           type="text"
           value={id}
-          placeholder="输入音乐ID  示例: music.163.com/#/song?id=你要输入的 或 y.qq.com/n/ryqq/songDetail/你要输入的 或 BV号@P数（可不含@P数，P数是数字不带P字母）"
+          placeholder="输入音乐ID或链接"
           onChange={(e) => setId(e.target.value)}
           minH={{ base: '80px', md: '60px', xl: '40px' }}
           sx={{
@@ -82,15 +82,14 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           minH={{ base: '80px', md: '40px' }}
           onClick={() => {
             if (id.length > 0 && apiName) {
-              const formattedId = apiName.includes('QQMusic') ? `${id},${id}` : id;
               props.conn
-                .enqueueMusic(formattedId, apiName)
+                .enqueueMusic(id, apiName)
                 .then(() => {
                   toastEnqueueOk(t);
                   setId('');
                 })
                 .catch((e) => {
-                  toastError(t, `音乐 {id: ${formattedId}} 加入队列失败`);
+                  toastError(t, `音乐 {id: ${id}} 加入队列失败`);
                   console.error(e);
                 });
             }
@@ -102,4 +101,3 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
     </>
   );
 };
-
