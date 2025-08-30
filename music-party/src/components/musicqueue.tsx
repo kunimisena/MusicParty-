@@ -15,10 +15,13 @@ import {
 } from '@chakra-ui/react';
 import { MusicOrderAction } from '../api/musichub';
 
-export const MusicQueue = (props: {
+interface MusicQueueProps {
   queue: MusicOrderAction[];
   top: (actionId: string) => void;
-}) => {
+}
+
+export const MusicQueue = (props: MusicQueueProps) => {
+  const { queue, top } = props;
   return (
     <Card mt={4}>
       <CardHeader>
@@ -26,21 +29,21 @@ export const MusicQueue = (props: {
       </CardHeader>
       <CardBody>
         <OrderedList>
-          {props.queue.length > 0 ? (
-            props.queue.map((v) => (
+          {queue.length > 0 ? (
+            queue.map((v) => (
               <ListItem key={v.actionId} fontSize={'lg'}>
                 <Flex>
                   <Box flex={1}>
                     {v.music.name} - {v.music.artists}
-                    <Text fontSize={'sm'} fontStyle={'italic'}>
+                    <Text fontSize={'sm'} fontStyle={'italic'} color="text.2">
                       由 {v.enqueuerName} 点歌
                     </Text>
                   </Box>
-                  {props.queue.findIndex((x) => x.actionId === v.actionId) !==
+                  {queue.findIndex((x) => x.actionId === v.actionId) !==
                     0 && (
                     <Tooltip hasArrow label={'将此歌曲至于队列顶端'}>
                       <IconButton
-                        onClick={() => props.top(v.actionId)}
+                        onClick={() => top(v.actionId)}
                         aria-label={'置顶'}
                         icon={<TriangleUpIcon />}
                       />
@@ -64,3 +67,4 @@ export const MusicQueue = (props: {
     </Card>
   );
 };
+

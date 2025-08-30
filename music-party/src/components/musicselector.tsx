@@ -47,11 +47,12 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
     xl: '40px'    // 桌面端
   }}
   sx={{
-    // === 核心修复配置 ===
     position: 'relative',
     _placeholder: {
+      // [核心修复] 在这里直接应用主题的二级字体颜色
+      color: 'text.2',
       position: 'absolute !important',
-      top: '0 !important',     // 占位符绝对贴顶
+      top: '0 !important',
       left: '0 !important',
       lineHeight: '1.2 !important',
       whiteSpace: 'pre-wrap',
@@ -60,14 +61,13 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
     },
     _input: {
       position: 'absolute !important',
-      top: '0 !important',     // 输入文本绝对贴顶
+      top: '0 !important',
       left: '0 !important',
       minH: 'inherit !important',
       lineHeight: '1.2 !important',
       width: '100% !important',
       padding: '0 !important'
     },
-    // === 显式断点控制 ===
     '@media (max-width: 819px)': { 
       minHeight: '80px',
       _input: { height: '80px !important' }

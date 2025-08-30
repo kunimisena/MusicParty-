@@ -38,8 +38,11 @@ export class Connection {
     globalMessage: (content: string) => void,
     autoDjStatusChanged: (isDisabled: boolean) => void,
     abort: (msg: string) => void,
-    // +++ 新增: 用于处理重连成功事件的回调函数 +++
-    onReconnected: () => Promise<void>
+    onReconnected: () => Promise<void>,
+    // [新增] 播放器同步：处理播放结束事件的回调
+    stopPlayback: () => void,
+    // [新增] 播放历史动态更新：处理新历史条目事件的回调
+    newPlayHistoryEntry: (entry: PlayHistoryEntry) => void
   ) {
     this._conn = new sr.HubConnectionBuilder()
       .withUrl(url)
@@ -57,8 +60,11 @@ export class Connection {
     this._conn.on("GlobalMessage", globalMessage);
     this._conn.on("AutoDjStatusChanged", autoDjStatusChanged);
     this._conn.on("Abort", abort);
+    
+    // [新增] 注册新的事件监听器
+    this._conn.on("StopPlayback", stopPlayback);
+    this._conn.on("NewPlayHistoryEntry", newPlayHistoryEntry);
 
-    // +++ 新增: 注册 onreconnected 钩子, 当自动重连成功时调用传入的回调 +++
     this._conn.onreconnected(async () => {
         console.log("Connection re-established. Triggering sync logic.");
         await onReconnected();
@@ -67,7 +73,6 @@ export class Connection {
   public async start(): Promise<any> {
     if (this._conn.state === sr.HubConnectionState.Disconnected) {
       await this._conn.start();
-      console.log("music hub: " + this._conn.state);
     }
   }
   public async enqueueMusic(id: string, apiName: string): Promise<void> {
@@ -136,3 +141,4 @@ export interface MusicOrderAction {
   music: Music;
   enqueuerName: string;
 }
+

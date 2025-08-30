@@ -5,6 +5,7 @@ appsettings.json
 chat_history.txt
 MusicParty/build
 MusicParty/bin
+*.txt
 
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 

@@ -80,15 +80,15 @@ export const Playlist = (props: {
               <Divider />
               <Flex justifyContent={'flex-end'}>
                 <Flex alignItems={'center'}>{`第 ${page} 页`}</Flex>
+                {/* [修改] 移除 colorScheme={'teal'}，使其使用主题默认按钮样式 */}
                 <Button
-                  colorScheme={'teal'}
                   ml={4}
                   onClick={() => setPage((o) => (o > 1 ? o - 1 : 1))}
                 >
                   上一页
                 </Button>
+                {/* [修改] 移除 colorScheme={'teal'}，使其使用主题默认按钮样式 */}
                 <Button
-                  colorScheme={'teal'}
                   ml={4}
                   onClick={() => setPage((o) => o + 1)}
                 >

@@ -52,7 +52,6 @@ public class MusicBroadcaster
     {
         while (true)
         {
-            // [核心修改] 决策依据改变：向"海关"(MusicHub)查询是否有活跃会话。
             if (!MusicHub.HasActiveSessions())
             {
                 if (_currentAutoDjMode == AutoDjMode.Active)
@@ -112,6 +111,11 @@ public class MusicBroadcaster
                 {
                     await AddToHistoryAndSaveAsync(NowPlaying.Value);
                     NowPlaying = null;
+                    
+                    if (!MusicQueue.Any())
+                    {
+                        await StopPlayback();
+                    }
                 }
             }
 
@@ -167,8 +171,6 @@ public class MusicBroadcaster
         }
     }
     
-    // --- 公开的RPC调用目标方法 ---
-
     public async Task EnqueueMusic(Music music, string apiName, string enqueuerId, bool isReplay = false)
     {
         var enqueuerName = GetEnqueuerName(enqueuerId);
@@ -185,6 +187,11 @@ public class MusicBroadcaster
         await AddToHistoryAndSaveAsync(NowPlaying.Value);
         await MusicCut(operatorId, NowPlaying.Value.music);
         NowPlaying = null;
+
+        if (!MusicQueue.Any())
+        {
+            await StopPlayback();
+        }
     }
 
     public async Task TopSong(string actionId, string operatorId)
@@ -197,16 +204,31 @@ public class MusicBroadcaster
     public IEnumerable<MusicOrderAction> GetQueue() => MusicQueue;
     public IEnumerable<PlayHistoryEntry> GetPlayHistory() => _playHistory;
 
-    // --- 广播方法 ---
-    public async Task BroadcastUserLoginAsync(string userId, string userName) => await _context.Clients.All.SendAsync("OnlineUserLogin", userId, userName);
-    public async Task BroadcastUserLogoutAsync(string userId) => await _context.Clients.All.SendAsync("OnlineUserLogout", userId);
-    public async Task BroadcastUserRenameAsync(string userId, string newUserName) => await _context.Clients.All.SendAsync("OnlineUserRename", userId, newUserName);
+    // --- 音乐相关广播方法 ---
     private async Task SetNowPlaying(PlayableMusic music, string enqueuerName) => await _context.Clients.All.SendAsync("SetNowPlaying", music, enqueuerName, 0);
     private async Task MusicEnqueued(string actionId, Music music, string enqueuerName) => await _context.Clients.All.SendAsync("MusicEnqueued", actionId, music, enqueuerName);
     private async Task MusicDequeued() => await _context.Clients.All.SendAsync("MusicDequeued");
     private async Task MusicTopped(string actionId, string operatorName) => await _context.Clients.All.SendAsync("MusicTopped", actionId, operatorName);
     private async Task MusicCut(string operatorId, Music music) => await _context.Clients.All.SendAsync("MusicCut", GetEnqueuerName(operatorId), music);
     private async Task GlobalMessage(string content) => await _context.Clients.All.SendAsync("GlobalMessage", content);
+    private async Task StopPlayback() => await _context.Clients.All.SendAsync("StopPlayback");
+    private async Task NewPlayHistoryEntry(PlayHistoryEntry entry) => await _context.Clients.All.SendAsync("NewPlayHistoryEntry", entry);
+
+    // --- [新增] 用户状态广播方法 ---
+    public async Task BroadcastUserLoginAsync(string id, string name)
+    {
+        await _context.Clients.All.SendAsync("OnlineUserLogin", id, name);
+    }
+
+    public async Task BroadcastUserLogoutAsync(string id)
+    {
+        await _context.Clients.All.SendAsync("OnlineUserLogout", id);
+    }
+
+    public async Task BroadcastUserRenameAsync(string id, string newName)
+    {
+        await _context.Clients.All.SendAsync("OnlineUserRename", id, newName);
+    }
 
     // --- 内部辅助方法 ---
     private string GetEnqueuerName(string enqueuerId)
@@ -243,6 +265,9 @@ public class MusicBroadcaster
             playedSong.apiName, playedSong.enqueuerId, playedSong.enqueuerName, DateTime.UtcNow);
 
         _playHistory.AddFirst(entry);
+        
+        await NewPlayHistoryEntry(entry);
+
         if (_playHistory.Count > _maxPlayHistoryCount) _playHistory.RemoveLast();
         await SavePlayHistoryAsync();
     }
@@ -260,7 +285,6 @@ public class MusicBroadcaster
         }
     }
 
-    // --- 内部记录与队列定义 ---
     public record MusicOrderAction(string ActionId, Music Music, string Service, string EnqueuerId, string EnqueuerName, bool IsReplay = false);
     private class ToppableQueue<T> : LinkedList<T>
     {
@@ -282,3 +306,4 @@ public class MusicBroadcaster
         }
     }
 }
+
