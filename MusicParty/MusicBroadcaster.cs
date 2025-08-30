@@ -149,7 +149,7 @@ public class MusicBroadcaster
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Attempt {Attempt} to play {MusicId} with {Api} failed.", i + 1, musicOrder.Music.Id, musicOrder.Service);
-                await Task.Delay(500); // Wait before retrying
+                //await Task.Delay(500); // Wait before retrying
             }
         }
         
