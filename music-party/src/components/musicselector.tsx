@@ -1,13 +1,11 @@
 import { Flex, Input, Button, useToast, Text, Menu, MenuButton, MenuList, MenuItem } from '@chakra-ui/react';
 import { ChevronDownIcon } from '@chakra-ui/icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Connection } from '../api/musichub';
-import { toastEnqueueOk, toastError } from '../utils/toast';
 
 export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
   const [id, setId] = useState('');
   const [apiName, setApiName] = useState('');
-  const [initialized, setInitialized] = useState(false);
   const t = useToast();
 
   useEffect(() => {
@@ -21,6 +19,22 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
       }
     }
   }, [props.apis]);
+
+  // [修改] 将点歌逻辑提取到一个可复用的函数中
+  const handleEnqueue = useCallback(() => {
+    if (id.trim().length > 0 && apiName) {
+      props.conn
+        .enqueueMusic(id, apiName)
+        .then(() => {
+          t({ title: '成功加入队列', status: 'success', duration: 3000, isClosable: true, position: 'bottom' });
+          setId(''); // 成功后清空输入框
+        })
+        .catch((e) => {
+          t({ title: '错误', description: `音乐 {id: ${id}} 加入队列失败`, status: 'error', duration: 5000, isClosable: true, position: 'bottom' });
+          console.error(e);
+        });
+    }
+  }, [id, apiName, props.conn, t]);
 
   return (
     <>
@@ -36,7 +50,7 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
             textAlign="left"
             fontWeight="normal"
             bg="bg.3"
-            color="text.2" // [核心修复] 为按钮本身指定二级字体颜色
+            color="text.2"
             _hover={{ bg: 'bg.2' }}
             _active={{ bg: 'bg.2' }}
           >
@@ -48,7 +62,6 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
                 key={a}
                   onClick={() => {
                   setApiName(a);
-                  // 将新的 apiName 保存到 localStorage
                   localStorage.setItem('musicSelectorApiName', a);
                 }}
               >
@@ -69,6 +82,12 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           value={id}
           placeholder="输入音乐ID或链接"
           onChange={(e) => setId(e.target.value)}
+          // [修改] 添加 onKeyDown 事件处理器，监听 Enter 键
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              handleEnqueue();
+            }
+          }}
           minH={{ base: '80px', md: '60px', xl: '40px' }}
           sx={{
             position: 'relative',
@@ -91,20 +110,8 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
           ml={2}
           alignSelf={{ base: 'flex-end', md: 'center' }}
           minH={{ base: '80px', md: '40px' }}
-          onClick={() => {
-            if (id.length > 0 && apiName) {
-              props.conn
-                .enqueueMusic(id, apiName)
-                .then(() => {
-                  toastEnqueueOk(t);
-                  setId('');
-                })
-                .catch((e) => {
-                  toastError(t, `音乐 {id: ${id}} 加入队列失败`);
-                  console.error(e);
-                });
-            }
-          }}
+          // [修改] 调用新的处理函数
+          onClick={handleEnqueue}
         >
           点歌
         </Button>
@@ -112,3 +119,4 @@ export const MusicSelector = (props: { apis: string[]; conn: Connection }) => {
     </>
   );
 };
+

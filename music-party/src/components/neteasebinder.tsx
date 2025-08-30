@@ -79,7 +79,7 @@ export const NeteaseBinder = (props: {}) => {
                               title: '绑定成功！',
                               status: 'success',
                               duration: 5000,
-                              position: 'top-right',
+                              position: 'bottom', // 修改
                             });
                             window.location.href = '/';
                           } catch (ex) {
@@ -88,7 +88,7 @@ export const NeteaseBinder = (props: {}) => {
                               title: '绑定失败',
                               status: 'error',
                               duration: 5000,
-                              position: 'top-right',
+                              position: 'bottom', // 修改
                               description: ex as any,
                             });
                           } finally {

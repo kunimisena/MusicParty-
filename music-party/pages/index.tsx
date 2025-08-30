@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import React, { useEffect, useRef, useState, useCallback, useContext, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useContext } from 'react';
 import { Connection, Music, MusicOrderAction, PlayHistoryEntry } from '../src/api/musichub';
 import {
   Text, Button, Card, CardBody, CardHeader, Grid, GridItem, Heading, Input, ListItem,
@@ -11,7 +11,6 @@ import { MusicPlayer } from '../src/components/musicplayer';
 import { getMusicApis } from '../src/api/api';
 import { NeteaseBinder } from '../src/components/neteasebinder';
 import { MyPlaylist } from '../src/components/myplaylist';
-import { toastEnqueueOk, toastError, toastInfo } from '../src/utils/toast';
 import { MusicSelector } from '../src/components/musicselector';
 import { QQMusicBinder } from '../src/components/qqmusicbinder';
 import { MusicQueue } from '../src/components/musicqueue';
@@ -134,6 +133,9 @@ export default function Home() {
   const [time, setTime] = useState(0);
   const { isOpen: isAutoplayModalOpen, onOpen: onAutoplayModalOpen, onClose: onAutoplayModalClose } = useDisclosure();
 
+  // 【修改点 1】: 修复“幻觉切歌”问题和“最后一首不刷新”问题
+  // 我们将 audio 元素的 `ended` 事件处理逻辑修改为只在本地 log，不再向服务器发送 `nextSong` 请求。
+  // 歌曲是否结束，完全交由后端的权威计时器来判断和广播，避免了客户端的错误上报。
   useEffect(() => {
     const audio = new Audio();
     audioRef.current = audio;
@@ -147,7 +149,10 @@ export default function Home() {
     };
     
     const handleEnded = () => {
-      conn.current?.nextSong();
+      // 这是关键修改！不再调用 conn.current?.nextSong()。
+      // 后端会自己判断歌曲是否播放完毕，并发送相应的指令（下一首歌或停止播放）。
+      // 这就解决了错误的“我切歌了”的提示。
+      console.log('Playback ended locally. Awaiting server command.');
     };
 
     audio.addEventListener("durationchange", handleDurationChange);
@@ -163,19 +168,33 @@ export default function Home() {
     }
   }, []);
 
+  // 【修改点 2】: 修复相同歌曲不重播的问题
+  // 这个 useEffect 负责根据 `src` 和 `playtime` 控制播放。
+  // 修改了内部逻辑，确保即使下一首歌的 URL 和当前一样，也能正确地重新加载和播放。
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     
     if (src === "") {
       audio.pause();
-      if (time !== 0) setTime(0);
-      if (length !== 0) setLength(0);
+      // 在停止播放时，也显式重置时间和长度，让UI立即响应。
+      setTime(0);
+      setLength(0);
     } else {
+      // 检查是否是同一首刚刚播放完的歌，这种情况需要强制重新加载。
+      const isSameSongEnded = audio.currentSrc === src && audio.ended;
+
       if (audio.src !== src) {
-        audio.src = src;
+        audio.src = src; // 设置新的音频源
       }
-      if (playtime !== 0 && Math.abs(audio.currentTime - playtime) > 2) {
+      
+      // 如果是重播同一首歌，必须调用 .load() 来重置音频元素状态
+      if (isSameSongEnded) {
+        audio.load();
+      }
+
+      // 与服务器的开始时间同步
+      if (playtime > 0 && Math.abs(audio.currentTime - playtime) > 2) {
         audio.currentTime = playtime;
       }
 
@@ -211,13 +230,15 @@ export default function Home() {
     setQueue(q => {
       const target = q.find((x) => x.actionId === actionId);
       if (!target) return q;
-      toastInfo(t, `歌曲 "${target.music.name}-${target.music.artists}" 被 ${operatorName} 置顶了`);
+      // 【修改点 3】: Toast 通知位置
+      t({ title: '提示', description: `歌曲 "${target.music.name}-${target.music.artists}" 被 ${operatorName} 置顶了`, status: 'info', duration: 3000, isClosable: true, position: 'bottom' });
       return [target, ...q.filter((x) => x.actionId !== actionId)];
     });
   }, [t]);
   
   const onMusicCut = useCallback((operatorName: string, _: Music) => {
-    toastInfo(t, `${operatorName} 切到了下一首歌`);
+    // 【修改点 3】: Toast 通知位置
+    t({ title: '提示', description: `${operatorName} 切到了下一首歌`, status: 'info', duration: 3000, isClosable: true, position: 'bottom' });
   }, [t]);
 
   const onOnlineUserLogin = useCallback((id: string, name: string) => {
@@ -249,12 +270,14 @@ export default function Home() {
 
   const onAutoDjStatusChanged = useCallback((isDisabled: boolean) => {
     setIsAutoDjDisabled(isDisabled);
-    toastInfo(t, `自动点歌机器人已${isDisabled ? '禁用' : '启用'}`);
+    // 【修改点 3】: Toast 通知位置
+    t({ title: '提示', description: `自动点歌机器人已${isDisabled ? '禁用' : '启用'}`, status: 'info', duration: 3000, isClosable: true, position: 'bottom' });
   }, [t]);
 
   const onAbort = useCallback((msg: string) => {
     console.error(msg);
-    toastError(t, msg);
+    // 【修改点 3】: Toast 通知位置
+    t({ title: '错误', description: msg, status: 'error', duration: 5000, isClosable: true, position: 'bottom' });
   }, [t]);
 
   const onStopPlayback = useCallback(() => {
@@ -284,7 +307,8 @@ export default function Home() {
       setIsAutoDjDisabled(autoDjStatus);
     } catch (err) {
       console.error("Failed to sync identity and state:", err);
-      toastError(t, "与服务器同步失败，请尝试刷新页面。");
+      // 【修改点 3】: Toast 通知位置
+      t({ title: '错误', description: "与服务器同步失败，请尝试刷新页面。", status: 'error', duration: 5000, isClosable: true, position: 'bottom' });
     } finally {
       isSyncing.current = false;
     }
@@ -298,7 +322,8 @@ export default function Home() {
     if (persistentId) hubUrl += `?userId=${persistentId}`;
 
     const onReconnected = async () => {
-      toastInfo(t, "已重新连接，正在同步状态...");
+      // 【修改点 3】: Toast 通知位置
+      t({ title: '提示', description: "已重新连接，正在同步状态...", status: 'info', duration: 3000, isClosable: true, position: 'bottom' });
       await syncIdentityAndState();
     };
 
@@ -312,13 +337,13 @@ export default function Home() {
       .then(async () => {
         await syncIdentityAndState();
         const chatHistory = await conn.current!.getChatHistory();
-        setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));//聊天记录加载
+        setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));
         conn.current!.getPlayHistory()
           .then(data => { setPlayHistory(data); setIsHistoryLoading(false); })
-          .catch(err => { console.error(err); toastError(t, "获取播放历史失败"); });
+          .catch(err => { console.error(err); t({ title: '错误', description: "获取播放历史失败", status: 'error', duration: 5000, isClosable: true, position: 'bottom' }); });
         setIsConnReady(true);
       })
-      .catch((e) => { console.error(e); toastError(t, '连接服务器失败，请刷新页面重试'); });
+      .catch((e) => { console.error(e); t({ title: '错误', description: '连接服务器失败，请刷新页面重试', status: 'error', duration: 5000, isClosable: true, position: 'bottom' }); });
     
     getMusicApis().then(setApis);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -348,7 +373,8 @@ export default function Home() {
                     <Text fontSize="md">除了酷狗api，均支持链接直接点歌</Text>
                     <Text fontSize="md">b站可以通过BV号@P数的形式指定p数，例如BV1aWVEzdE3W@17</Text>
                     <Text fontSize="md">网易云和QQ音乐可以用id直接点歌</Text>
-                    <Text fontSize="md">酷狗只能播放搜索到的第一首歌，因此id点歌直接输入详尽的关键字（例如曲名+歌手）</Text>
+                    <Text fontSize="md">酷狗只能播放搜索到的第一首歌</Text>
+                    <Text fontSize="md" mt={1}>因此id点歌直接输入详尽的关键字（例如曲名+歌手）</Text>
                     <Text fontSize="md" mt={1}>人多的时候，一人播放队列里请只点一首歌哦！（不含正在播放）</Text>
                     <Text fontSize="md" mt={1}>账号绑定没有出现歌单的情况，注意账号的隐私设置！</Text>
                     <Text fontSize="md" mt={1}>有问题多联系！</Text>
@@ -369,12 +395,17 @@ export default function Home() {
                             </PopoverBody>
                             <PopoverFooter>
                               <Button w="full" onClick={async () => {
-                                  if (newName.trim() === '') return toastInfo(t, "新名字不能为空");
+                                  if (newName.trim() === '') {
+                                    // 【修改点 3】: Toast 通知位置
+                                    t({ title: '提示', description: "新名字不能为空", status: 'info', duration: 3000, isClosable: true, position: 'bottom' });
+                                    return;
+                                  }
                                   const user = await conn.current!.rename(newName.trim());
                                   setPersistentUserId(user.id);
                                   setUserName(user.name);
                                   setCookie(COOKIE_USERNAME_KEY, user.name, 365);
-                                  toastInfo(t, `名字已成功修改为: ${user.name}`);
+                                  // 【修改点 3】: Toast 通知位置
+                                  t({ title: '提示', description: `名字已成功修改为: ${user.name}`, status: 'info', duration: 3000, isClosable: true, position: 'bottom' });
                                   onClose(); setNewName('');
                                 }}
                               >确认</Button>
@@ -435,12 +466,12 @@ export default function Home() {
                           {nowPlaying ? (
                             <Grid
                               templateAreas={{
-                                base: `"playing-text" "marquee" "enqueuer"`, // 手机端：全部换行
-                                md: `"playing-text playing-text" "marquee marquee" "enqueuer enqueuer"`, // 桌面端：同样全部换行
+                                base: `"playing-text" "marquee" "enqueuer"`,
+                                md: `"playing-text playing-text" "marquee marquee" "enqueuer enqueuer"`,
                               }}
-                              gridTemplateColumns="1fr" // 单列布局
+                              gridTemplateColumns="1fr"
                               gap={1}
-                              alignItems="flex-start" // 顶部对齐
+                              alignItems="flex-start"
                             >
                               <GridItem area="playing-text" whiteSpace="nowrap">
                                 <Heading size="md">正在播放:</Heading>
@@ -485,7 +516,7 @@ export default function Home() {
               <TabPanel>
                 <Card>
                     <CardBody>
-                        {!isConnReady ? <Text>初始化...</Text> : <MyPlaylist apis={apis} enqueue={(id, apiName) => { conn.current!.enqueueMusic(id, apiName).then(() => toastEnqueueOk(t)).catch(() => toastError(t, `音乐加入队列失败`)); }} />}
+                        {!isConnReady ? <Text>初始化...</Text> : <MyPlaylist apis={apis} enqueue={(id, apiName) => { conn.current!.enqueueMusic(id, apiName).then(() => t({ title: '成功加入队列', status: 'success', duration: 3000, isClosable: true, position: 'bottom' })).catch(() => t({ title: '错误', description: `音乐加入队列失败`, status: 'error', duration: 5000, isClosable: true, position: 'bottom' })); }} />}
                     </CardBody>
                 </Card>
               </TabPanel>
@@ -528,4 +559,3 @@ export default function Home() {
     </>
   );
 }
-

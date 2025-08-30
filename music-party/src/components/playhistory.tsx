@@ -12,7 +12,6 @@ import {
 } from '@chakra-ui/react';
 import React from 'react';
 import { Connection, HistoryMusic, PlayHistoryEntry } from '../api/musichub';
-import { toastEnqueueOk, toastError } from '../utils/toast';
 
 interface PlayHistoryProps {
   conn?: Connection;
@@ -29,10 +28,12 @@ export const PlayHistory = (props: PlayHistoryProps) => {
     if (!conn) return;
     conn.replayMusic(music, apiName)
       .then(() => {
-        toastEnqueueOk(t);
+        // 修改：直接调用 t，不再使用辅助函数
+        t({ title: '成功加入队列', status: 'success', duration: 3000, isClosable: true, position: 'bottom' });
       })
       .catch((e) => {
-        toastError(t, `歌曲 (${music.name}) 加入队列失败`);
+        // 修改：直接调用 t，不再使用辅助函数
+        t({ title: '错误', description: `歌曲 (${music.name}) 加入队列失败`, status: 'error', duration: 5000, isClosable: true, position: 'bottom' });
         console.error(e);
       });
   };
@@ -81,4 +82,3 @@ export const PlayHistory = (props: PlayHistoryProps) => {
     </Stack>
   );
 };
-

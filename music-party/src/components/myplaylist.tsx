@@ -14,7 +14,6 @@ import {
 import { ChevronDownIcon } from '@chakra-ui/icons';
 import { useEffect, useState } from "react";
 import * as api from "../api/api";
-import { toastError } from "../utils/toast";
 import { Playlist } from "./playlist";
 
 export const MyPlaylist = (props: {
@@ -66,7 +65,8 @@ export const MyPlaylist = (props: {
           setPlaylistCache((c) => c.set(apiName, resp));
         })
         .catch((err) => {
-          toastError(t, err.toString());
+          // 修改：直接调用 t，不再使用辅助函数
+          t({ title: '错误', description: err.toString(), status: 'error', duration: 5000, isClosable: true, position: 'bottom' });
         })
         .finally(() => {
             setCanshow(true);
@@ -91,7 +91,7 @@ export const MyPlaylist = (props: {
                 textAlign="left"
                 fontWeight="normal"
                 bg="bg.3"
-                color="text.2" // [核心修复] 为按钮本身指定二级字体颜色
+                color="text.2"
                 _hover={{ bg: 'bg.2' }}
                 _active={{ bg: 'bg.2' }}
               >
@@ -138,4 +138,3 @@ export const MyPlaylist = (props: {
     </Stack>
   );
 };
-

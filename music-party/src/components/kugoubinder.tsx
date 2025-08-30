@@ -38,7 +38,7 @@ export const KuGouBinder = (props: {}) => {
         status: 'warning',
         duration: 3000,
         isClosable: true,
-        position: 'top-right',
+        position: 'bottom', // 修改
       });
       return;
     }
@@ -54,7 +54,7 @@ export const KuGouBinder = (props: {}) => {
           status: 'info',
           duration: 5000,
           isClosable: true,
-          position: 'top-right',
+          position: 'bottom', // 修改
         });
       }
     } catch (error: any) {
@@ -66,7 +66,7 @@ export const KuGouBinder = (props: {}) => {
         status: 'error',
         duration: 5000,
         isClosable: true,
-        position: 'top-right',
+        position: 'bottom', // 修改
       });
     }
   };
@@ -80,7 +80,7 @@ export const KuGouBinder = (props: {}) => {
         status: 'success',
         duration: 5000,
         isClosable: true,
-        position: 'top-right',
+        position: 'bottom', // 修改
       });
       // 绑定成功后刷新页面或进行其他操作
       window.location.href = '/'; 
@@ -92,7 +92,7 @@ export const KuGouBinder = (props: {}) => {
         status: 'error',
         duration: 5000,
         isClosable: true,
-        position: 'top-right',
+        position: 'bottom', // 修改
       });
     } finally {
       onClose(); // 关闭抽屉
