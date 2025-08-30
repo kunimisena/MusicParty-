@@ -86,6 +86,7 @@ export default function App({ Component, pageProps }: AppProps) {
             outline: {
               field: {
                 bg: 'bg.3',
+                color: 'text.1', // [最终修复] 明确指定输入时的文字颜色
                 _placeholder: { color: 'text.2' },
                 _focusVisible: {
                     borderColor: 'text.3',
@@ -111,22 +112,19 @@ export default function App({ Component, pageProps }: AppProps) {
                 },
             },
         },
-        // [核心修复] 为 Menu 组件的 list 和 item 部分提供完整的、明确的样式
         Menu: {
             baseStyle: {
-                // 这是对 <MenuList> (整个下拉框) 的样式
                 list: {
                     bg: 'bg.3',
                     borderColor: 'bg.2'
                 },
-                // 这是对 <MenuItem> (每一个选项) 的样式
                 item: {
-                    bg: 'bg.3',      // 背景色：三级背景
-                    color: 'text.2', // 字体色：二级字体
+                    bg: 'bg.3',
+                    color: 'text.2',
                     _hover: {
-                        bg: 'bg.2'   // 悬停背景色：二级背景
+                        bg: 'bg.2'
                     },
-                    _focus: {        // 键盘聚焦时的样式，保持一致
+                    _focus: {
                         bg: 'bg.2'
                     }
                 }

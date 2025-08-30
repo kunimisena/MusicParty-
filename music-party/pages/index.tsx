@@ -312,7 +312,7 @@ export default function Home() {
       .then(async () => {
         await syncIdentityAndState();
         const chatHistory = await conn.current!.getChatHistory();
-        setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})).reverse());
+        setChatContent(chatHistory.map(msg => ({...msg, timestamp: msg.timestamp * 1000})));//聊天记录加载
         conn.current!.getPlayHistory()
           .then(data => { setPlayHistory(data); setIsHistoryLoading(false); })
           .catch(err => { console.error(err); toastError(t, "获取播放历史失败"); });
@@ -437,16 +437,19 @@ export default function Home() {
                         <Box mb={4}>
                           {nowPlaying ? (
                             <Grid
-                              templateColumns={{ base: '1fr auto', md: 'auto 1fr auto' }}
-                              templateRows={{ base: 'auto auto', md: '1fr' }}
-                              gap={{ base: 1, md: 2 }}
-                              alignItems="baseline"
+                              templateAreas={{
+                                base: `"playing-text" "marquee" "enqueuer"`, // 手机端：全部换行
+                                md: `"playing-text playing-text" "marquee marquee" "enqueuer enqueuer"`, // 桌面端：同样全部换行
+                              }}
+                              gridTemplateColumns="1fr" // 单列布局
+                              gap={1}
+                              alignItems="flex-start" // 顶部对齐
                             >
-                              <GridItem whiteSpace="nowrap">
+                              <GridItem area="playing-text" whiteSpace="nowrap">
                                 <Heading size="md">正在播放:</Heading>
                               </GridItem>
                               
-                              <GridItem overflow="hidden">
+                              <GridItem area="marquee" overflow="hidden">
                                 <MarqueeText>
                                   <Text as="span" fontWeight="bold" fontSize="lg">
                                     {`${nowPlaying.music.name} - ${nowPlaying.music.artists}`}
@@ -454,7 +457,7 @@ export default function Home() {
                                 </MarqueeText>
                               </GridItem>
 
-                              <GridItem whiteSpace="nowrap" justifySelf={{ base: 'end', md: 'start' }}>
+                              <GridItem area="enqueuer" whiteSpace="nowrap">
                                 <Text fontSize="sm" fontStyle="italic" color="text.2">
                                   {`由 ${nowPlaying.enqueuer} 点播`}
                                 </Text>
