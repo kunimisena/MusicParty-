@@ -55,11 +55,9 @@ const setCookie = (name: string, value: string, days: number) => {
   document.cookie = name + "=" + (encodeURIComponent(value) || "")  + expires + "; path=/";
 };
 
-// [修改] 不再需要 secondaryColor prop
 const ChatMessageItem = React.memo(function ChatMessageItem({ msg }: { msg: ChatMessage }) {
     return (
       <ListItem p={2} borderRadius="md" wordBreak="break-word">
-        {/* 直接使用主题中的二级字体颜色 */}
         <Text as="span" fontSize="xs" color="text.2" mr={2}>
           {new Date(msg.timestamp).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
         </Text>
@@ -69,7 +67,6 @@ const ChatMessageItem = React.memo(function ChatMessageItem({ msg }: { msg: Chat
     );
   });
   
-// [修改] 不再需要 secondaryColor prop
 const ChatSection = React.memo(function ChatSection({
     conn,
     chatContent,
@@ -100,7 +97,6 @@ const ChatSection = React.memo(function ChatSection({
           </Flex>
           <UnorderedList maxH="300px" overflowY="auto" pr={2} listStyleType="none" spacing={2} width="100%" mt={2}>
             {chatContent.map((s) => (
-              // [修改] 不再传递 secondaryColor
               <ChatMessageItem key={`msg-${s.timestamp}-${s.name}`} msg={s} />
             ))}
           </UnorderedList>
@@ -124,7 +120,6 @@ export default function Home() {
   const [isAutoDjDisabled, setIsAutoDjDisabled] = useState(false);
   const [isConnReady, setIsConnReady] = useState(false);
   const [apis, setApis] = useState<string[]>([]);
-  // [修改] 从 ThemeContext 中获取主题切换函数和原始主题数据
   const { themeKey, setThemeKey, themes } = useContext(ThemeContext);
   const t = useToast();
 
@@ -348,7 +343,6 @@ export default function Home() {
             <Card>
               <CardHeader>
                  <Heading size="lg" mb={2}>{`欢迎, ${userName}!`}</Heading>
-                 {/* [修改] 网站提示使用二级字体颜色 */}
                  <Box color="text.2">
                     <Text fontSize="md">请改成群内昵称</Text>
                     <Text fontSize="md">b站id点歌可以通过“@”来输入特定的P（否则默认1P），例如BV1Dv411T7E2@3</Text>
@@ -430,8 +424,7 @@ export default function Home() {
               <CardHeader><Heading size="md">在线 ({onlineUsers.size})</Heading></CardHeader>
               <CardBody><UnorderedList listStyleType="none" ml={0}>{Array.from(onlineUsers.values()).map((u) => <ListItem key={u.id} p={1} borderRadius="md">{u.name}</ListItem>)}</UnorderedList></CardBody>
             </Card>
-            {/* [修改] 不再传递 secondaryColor */}
-            <ChatSection conn={conn.current} chatContent={chatContent}/>
+            <ChatSection conn={conn.current} chatContent={chatContent} />
           </Stack>
         </GridItem>
         <GridItem area={'main'}>
@@ -455,14 +448,13 @@ export default function Home() {
                               
                               <GridItem overflow="hidden">
                                 <MarqueeText>
-                                  <Box as="span" fontWeight="bold" fontSize="lg">
+                                  <Text as="span" fontWeight="bold" fontSize="lg">
                                     {`${nowPlaying.music.name} - ${nowPlaying.music.artists}`}
-                                  </Box>
+                                  </Text>
                                 </MarqueeText>
                               </GridItem>
 
                               <GridItem whiteSpace="nowrap" justifySelf={{ base: 'end', md: 'start' }}>
-                                {/* [修改] 直接使用主题中的二级字体颜色 */}
                                 <Text fontSize="sm" fontStyle="italic" color="text.2">
                                   {`由 ${nowPlaying.enqueuer} 点播`}
                                 </Text>
@@ -483,7 +475,6 @@ export default function Home() {
                             setQueue(q);
                           }}
                         />
-                        {/* [修改] 不再传递 secondaryColor */}
                         <MusicQueue queue={queue} top={(actionId) => conn.current!.topSong(actionId)} />
                     </CardBody>
                 </Card>
@@ -501,7 +492,6 @@ export default function Home() {
               <TabPanel>
                 <Card>
                     <CardBody>
-                        {/* [修改] 不再传递 secondaryColor */}
                         <PlayHistory conn={conn.current} isConnReady={isConnReady} history={playHistory} isLoading={isHistoryLoading} />
                     </CardBody>
                 </Card>
@@ -538,3 +528,4 @@ export default function Home() {
     </>
   );
 }
+

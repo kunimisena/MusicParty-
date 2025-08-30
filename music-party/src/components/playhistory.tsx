@@ -14,7 +14,6 @@ import React from 'react';
 import { Connection, HistoryMusic, PlayHistoryEntry } from '../api/musichub';
 import { toastEnqueueOk, toastError } from '../utils/toast';
 
-// [修改] 移除 secondaryColor prop
 interface PlayHistoryProps {
   conn?: Connection;
   isConnReady: boolean;
@@ -61,7 +60,6 @@ export const PlayHistory = (props: PlayHistoryProps) => {
                   >
                     <Box flex={1} mb={{ base: 2, md: 0 }}>
                       <Text fontWeight="bold" fontSize="lg">{entry.music.name}</Text>
-                      {/* [修改] 直接使用主题中定义的二级字体颜色 */}
                       <Text fontSize="md" color="text.2">{entry.music.artists.join(' / ')}</Text>
                       <Text fontSize="sm" fontStyle="italic" color="text.2">由 {entry.enqueuerName} 点播</Text>
                     </Box>
@@ -83,3 +81,4 @@ export const PlayHistory = (props: PlayHistoryProps) => {
     </Stack>
   );
 };
+
