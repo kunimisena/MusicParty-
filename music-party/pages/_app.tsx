@@ -21,7 +21,7 @@ const themes = {
     },
   },
   sick: {
-    name: '脑溢血',
+    name: '测试',
     colors: {
       bg: { 1: '#ff0000ff', 2: '#33ff00ff', 3: '#1e00ffff' },
       text: { 1: '#f200ffff', 2: '#00ffd9ff', 3: '#00eeffff' },

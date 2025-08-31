@@ -12,9 +12,9 @@ interface MarqueeTextProps extends BoxProps {
 
 export const MarqueeText: React.FC<MarqueeTextProps> = ({ 
   children, 
-  speed = 50, // 默认速度 50px/s
-  startPauseInSeconds = 10, // 默认开始前停留 2 秒
-  endPauseInSeconds = 4,   // 默认结束后停留 3 秒
+  speed = 50,
+  startPauseInSeconds = 2, 
+  endPauseInSeconds = 2,
   ...rest 
 }) => {
   // 这个 state 用来存储最终生成的 CSS 动画属性
