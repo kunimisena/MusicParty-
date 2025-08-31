@@ -67,6 +67,15 @@ export async function getMusicsByPlaylist(
   return await resp.json();
 }
 
+export async function setCredential(apiName: string, cred: string): Promise<void> {
+  const resp = await fetch(`/api/setcredential/${apiName}`, {
+    method: 'POST',
+    // 后端 [FromBody] string? cred 期望一个JSON字符串
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cred)
+  });
+  await handleResponseError(resp);
+}
 // --- 接口定义 (保持不变) ---
 
 export interface User {

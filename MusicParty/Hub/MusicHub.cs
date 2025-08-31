@@ -4,6 +4,7 @@ using MusicParty.MusicApi;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Diagnostics;
 
 namespace MusicParty.Hub;
 
@@ -238,6 +239,30 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     public bool GetAutoDjStatus()
     {
         return MusicBroadcaster.IsAutoDjManuallyDisabled;
+    }
+
+        public Task AdminRestartServer()
+    {
+        _logger.LogWarning("Admin user {UserId} triggered a server restart.", Context.UserIdentifier);
+        
+        string scriptPath = Path.Combine(AppContext.BaseDirectory, "#test.bat");
+
+        if (File.Exists(scriptPath))
+        {
+            // 修正:
+            // 我们不直接运行 .bat 文件，而是启动一个新的 cmd.exe 进程。
+            // 使用 /c "start ..." 参数，让这个新的 cmd 进程通过 start 命令
+            // 在一个全新的、独立的窗口中运行我们的 #test.bat 脚本。
+            // 这就为脚本提供了它所需要的“交互式”环境，使其能够成功重启服务。
+            Process.Start("cmd.exe", $"/c start \"Restarting Server\" \"{scriptPath}\"");
+        }
+        else
+        {
+            _logger.LogError("Restart script not found at {Path}", scriptPath);
+            throw new HubException("服务器重启失败: 未在预期位置找到 #test.bat 脚本。");
+        }
+
+        return Task.CompletedTask;
     }
 
     #endregion

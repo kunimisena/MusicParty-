@@ -129,6 +129,10 @@ export class Connection {
   public async getAutoDjStatus(): Promise<boolean> {
     return await this._conn.invoke("GetAutoDjStatus");
   }
+
+  public async adminRestartServer(): Promise<void> {
+    await this._conn.invoke("AdminRestartServer");
+  }
 }
 export interface Music {
   url: string;

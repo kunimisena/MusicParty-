@@ -75,6 +75,10 @@ public class QQMusicApi : IMusicApi
             _http.DefaultRequestHeaders.Remove("Cookie");
             _http.DefaultRequestHeaders.Add("Cookie", cred);
             _isLoggedIn = true;
+
+            // 将新的有效凭据写入文件以实现持久化
+            await File.WriteAllTextAsync("qqmusic_cookie.txt", cred);
+            
             return true;
         }
         

@@ -6,14 +6,23 @@ namespace MusicParty.MusicApi.Bilibili;
 
 public class BilibiliApi : IMusicApi
 {
-    private readonly string _sessdata;
+    // 修正 CS0191: 移除了 'readonly' 关键字，允许在运行时更新此字段
+    private string _sessdata;
     private readonly string _phoneNo;
     private readonly HttpClient _http = new();
     public string ServiceName => "Bilibili";
 
     public BilibiliApi(string sessdata, string phoneNo)
     {
-        _sessdata = sessdata;
+        // 这是我们在第3步中添加的逻辑，现在它可以正常工作了
+        if (File.Exists("bilibili_sessdata.txt"))
+        {
+            _sessdata = File.ReadAllText("bilibili_sessdata.txt").Trim();
+        }
+        else
+        {
+            _sessdata = sessdata;
+        }
         _phoneNo = phoneNo;
     }
 
@@ -29,7 +38,8 @@ public class BilibiliApi : IMusicApi
             if (string.IsNullOrEmpty(_phoneNo))
                 throw new LoginException(
                     "You must set SESSDATA or phone number of your bilibili account in appsettings.json.");
-            QRCodeLogin().Wait();
+            // 修正 CS1998: 因为 QRCodeLogin 是同步的，所以直接调用
+            QRCodeLogin();
         }
 
         Console.WriteLine("Login success!");
@@ -42,40 +52,66 @@ public class BilibiliApi : IMusicApi
         if (!await CheckSESSDATAAsync(sessdata))
             throw new LoginException($"Login failed, check your SESSDATA.");
         
-        // 原有代码：手动添加 Cookie 到 HttpClient
+        _http.DefaultRequestHeaders.Remove("Cookie"); // 先移除旧的，防止重复
         _http.DefaultRequestHeaders.Add("Cookie", $"SESSDATA={sessdata}");
+        
+        // 修正: 使用 TryGetValues 使代码更健壮
         var resp2 = await _http.GetAsync("https://www.bilibili.com");
-        var cookies = resp2.Headers.GetValues("Set-Cookie");
-        _http.DefaultRequestHeaders.Add("Cookie", cookies);
-
-        // 新增代码：将拼接后的 Cookie 保存到全局变量
-        // 格式示例：SESSDATA=xxxx; sid=xxxx; other_cookie=xxxx
-        BilibiliApiGlobalCookieStorage = $"SESSDATA={sessdata}; " + string.Join("; ", cookies);
+        if (resp2.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
+            _http.DefaultRequestHeaders.Add("Cookie", cookies);
+            BilibiliApiGlobalCookieStorage = $"SESSDATA={sessdata}; " + string.Join("; ", cookies);
+        }
+        else
+        {
+            BilibiliApiGlobalCookieStorage = $"SESSDATA={sessdata}";
+        }
     }
 
     private async Task<bool> CheckSESSDATAAsync(string sessdata)
     {
         var http = new HttpClient();
+        // 修正: 添加一个标准的浏览器 User-Agent 头。
+        // Bilibili的API可能会拒绝没有此头的请求。
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36");
         http.DefaultRequestHeaders.Add("Cookie", $"SESSDATA={sessdata}");
         var resp = await http.GetStringAsync("https://api.bilibili.com/x/web-interface/nav");
         var j = JsonNode.Parse(resp)!;
         return j["code"]!.GetValue<int>() == 0;
     }
 
-    private async Task QRCodeLogin()
+    // 修正 CS1998: 将方法签名从 'async Task' 改为 'void'，因为它不包含任何 'await' 操作
+    private void QRCodeLogin()
     {
         throw new NotImplementedException();
     }
 
     public async Task<bool> TrySetCredentialAsync(string cred)
     {
-        if (!await CheckSESSDATAAsync(cred))
+        if (string.IsNullOrEmpty(cred) || !await CheckSESSDATAAsync(cred))
             return false;
+        
+        // 更新Http客户端的Cookie
         _http.DefaultRequestHeaders.Remove("Cookie");
         _http.DefaultRequestHeaders.Add("Cookie", $"SESSDATA={cred}");
+
+        // 修正: 使用 TryGetValues 使代码更健壮
         var resp = await _http.GetAsync("https://www.bilibili.com");
-        var cookies = resp.Headers.GetValues("Set-Cookie");
-        _http.DefaultRequestHeaders.Add("Cookie", cookies);
+        if (resp.Headers.TryGetValues("Set-Cookie", out var cookies))
+        {
+            _http.DefaultRequestHeaders.Add("Cookie", cookies);
+            // 更新用于代理的全局Cookie
+            BilibiliApiGlobalCookieStorage = $"SESSDATA={cred}; " + string.Join("; ", cookies);
+        }
+        else
+        {
+            BilibiliApiGlobalCookieStorage = $"SESSDATA={cred}";
+        }
+
+        // 将新的有效凭据写入文件以实现持久化
+        await File.WriteAllTextAsync("bilibili_sessdata.txt", cred);
+        _sessdata = cred; // 因为 'readonly' 已被移除，所以这行代码现在是合法的
+
         return true;
     }
 
@@ -84,7 +120,6 @@ public class BilibiliApi : IMusicApi
         // ====================== START: 新增 URL 兼容逻辑 ======================
         string id = idInput;
         
-        // TODO: 留空，请提供 URL 示例
         var musicRegex = new Regex("BV([^/&#?]+)(?:.*?p=(\\d+))?");
 
         var musicMatch = musicRegex.Match(idInput);
@@ -98,10 +133,9 @@ public class BilibiliApi : IMusicApi
             }
         }
         // ====================== END: 新增 URL 兼容逻辑 ======================
-
-        // 解析输入（支持 BV1xxx@2 格式）
+        
         string bvid;
-        int p = 1; // 默认第1P
+        int p = 1;
         if (id.Contains('@'))
         {
             var parts = id.Split('@');
@@ -114,34 +148,29 @@ public class BilibiliApi : IMusicApi
             bvid = id;
         }
     
-        // 调用 Bilibili API
         var resp = await _http.GetStringAsync($"https://api.bilibili.com/x/web-interface/view?bvid={bvid}");
         var j = JsonSerializer.Deserialize<BVQueryJson.RootObject>(resp);
         if (j is null || j.code != 0 || j.data is null)
             throw new Exception($"无法获取音乐信息，响应: {resp}");
     
-        // 获取正确的 CID（处理分P逻辑）
         long targetCid;
         if (p == 1)
         {
-            // 使用默认的 data.cid（兼容旧输入）
             targetCid = j.data.cid;
         }
         else
         {
-            // 检查分P是否存在
             if (j.data.pages == null || j.data.pages.Count < p - 1)
                 throw new Exception($"分P号 {p} 超出范围（最大 {j.data.pages?.Count ?? 0}）");
             
-            // 注意：pages 数组索引从0开始，用户输入从1开始
             targetCid = j.data.pages[p - 1].cid;
         }
     
-        // 构造 Music 对象
         return new Music($"{bvid},{targetCid}", j.data.title, new[] { j.data.owner.name });
     }
 
-    public async Task<IEnumerable<Music>> SearchMusicByNameAsync(string name)
+    // 修正 CS1998: 移除了 async 关键字
+    public Task<IEnumerable<Music>> SearchMusicByNameAsync(string name)
     {
         throw new NotImplementedException();
     }
@@ -152,32 +181,32 @@ public class BilibiliApi : IMusicApi
         var resp = await _http.GetStringAsync(
             $"https://api.bilibili.com/x/player/playurl?bvid={ids[0]}&cid={ids[1]}&fnval=16");
         var j = JsonSerializer.Deserialize<PlayUrlJson.RootObject>(resp);
-        if (j is null || j.code != 0 || j.data is null)
+        if (j is null || j.code != 0 || j.data?.dash?.audio is null)
             throw new Exception($"Unable to get playable music, message: {resp}");
         
-        var maxAllowedDuration = 1200; // 最大允许时长（秒）
+        var maxAllowedDuration = 1200;
         
         if (j.data.dash.duration > maxAllowedDuration)
         {
             throw new Exception($"音频时长过长（{j.data.dash.duration} 秒），超过限制 {maxAllowedDuration} 秒");
         }
+        
+        var originalUrl = j.data.dash.audio.OrderBy(x => x.id).First().baseUrl;
 
-        // 获取原始 CDN URL
-        var originalUrl = j.data.dash.audio.OrderBy(x => x.id).First().baseUrl;     //j.data.dash.audio.OrderByDescending(x => x.id).First().baseUrl改为最差音质
+        if(string.IsNullOrEmpty(originalUrl))
+            throw new Exception($"Unable to get playable music, message: {resp}");
 
-        // 强制替换为华为云 CDN 节点
         var uri = new Uri(originalUrl);
         var newUrl = new UriBuilder(uri)
         {
-            Host = "upos-sz-mirrorhw.bilivideo.com" // 关键修改：替换域名  
-        }.Uri.ToString();                           //upos-sz-mirror08c.bilivideo.com华为
-                                                    //upos-sz-mirrorcos.bilivideo.com腾讯 
-        return new PlayableMusic(music)             //upos-sz-mirrorali.bilivideo.com阿里
+            Host = "upos-sz-mirrorhw.bilivideo.com"
+        }.Uri.ToString();
+        return new PlayableMusic(music)
         {
             Url = $"/musicproxy?timestamp={DateTimeOffset.Now.ToUnixTimeSeconds()}",
             Length = j.data.dash.duration * 1000,
             NeedProxy = true,
-            TargetUrl = newUrl, // 使用修改后的 URL
+            TargetUrl = newUrl,
             Referer = "https://www.bilibili.com",
         };
     }
@@ -191,7 +220,7 @@ public class BilibiliApi : IMusicApi
             throw new Exception($"Search user failed, message: {resp}");
         if (j.data?.result is null)
             return Array.Empty<MusicServiceUser>();
-        return j.data.result.Select(x => new MusicServiceUser(x.mid.ToString(), x.uname));
+        return j.data.result.Select(x => new MusicServiceUser(x.mid.ToString(), x.uname ?? ""));
     }
 
     public async Task<IEnumerable<PlayList>> GetUserPlayListAsync(string userIdentifier)
@@ -237,7 +266,8 @@ public class BilibiliApi : IMusicApi
         public class Result
         {
             public long mid { get; init; }
-            public string uname { get; init; }
+            // 修正 CS8618: 将属性声明为可为 null
+            public string? uname { get; init; }
         }
     }
 
@@ -283,31 +313,27 @@ public class BilibiliApi : IMusicApi
 
     private class BVQueryJson
     {
-        // 对应整个 JSON 响应
         public record RootObject(
             long code,
             Data? data
         );
     
-        // 对应 data 对象（新增 pages 字段）
         public record Data(
             string bvid,
             string title,
             Owner owner,
-            long cid,        // 注意：这是默认的 CID（对应第1P）
-            List<Page> pages // 新增分P列表
+            long cid,
+            List<Page> pages
         );
     
-        // 对应 data.owner 对象
         public record Owner(
             string name
         );
     
-        // 新增分P对象定义（字段名与 JSON 完全一致）
         public record Page(
-            long cid,   // 分P的 CID
-            int page,   // 分P号（用户看到的1,2,3...）
-            string part // 分P标题
+            long cid,
+            int page,
+            string part
         );
     }
 
@@ -321,21 +347,27 @@ public class BilibiliApi : IMusicApi
 
         public class Data
         {
-            public Dash dash { get; set; }
+            // 修正 CS8618: 将属性声明为可为 null
+            public Dash? dash { get; set; }
         }
 
         public class Dash
         {
             public long duration { get; set; }
-            public Audio[] audio { get; set; }
+            // 修正 CS8618: 将属性声明为可为 null
+            public Audio[]? audio { get; set; }
         }
+
+
 
         public class Audio
         {
             public long id { get; set; }
-            public string baseUrl { get; set; }
+            // 修正 CS8618: 将属性声明为可为 null
+            public string? baseUrl { get; set; }
         }
     }
 
     #endregion
 }
+
