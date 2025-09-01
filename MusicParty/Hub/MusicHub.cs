@@ -25,7 +25,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     }
     
     private static readonly ConcurrentDictionary<string, UserSession> _sessions = new();
-    private static readonly TimeSpan _heartbeatTimeout = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan _heartbeatTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(1);
 
     private readonly UserManager _userManager; 

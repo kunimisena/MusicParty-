@@ -15,6 +15,26 @@ public class MusicProxyMiddleware
         _next = next;
     }
 
+    // --- [新增方法] ---
+    /// <summary>
+    /// 公开的静态方法，用于从外部强制停止并清理代理状态。
+    /// 这是解决移动端断线重连后状态不同步的关键。
+    /// </summary>
+    public static void StopAndClearProxyState()
+    {
+        // 1. 发出取消信号，停止正在进行的下载任务
+        if (!_tokenSource.IsCancellationRequested)
+        {
+            _tokenSource.Cancel();
+        }
+
+        // 2. 将所有状态变量重置为初始值
+        _currentLength = 0;
+        _read = 0;
+        _currentBuf = null;
+        _currentMimeType = null;
+    }
+
     public async Task InvokeAsync(HttpContext context)
     {
         if (!context.Request.Path.StartsWithSegments("/musicproxy"))
@@ -23,9 +43,11 @@ public class MusicProxyMiddleware
             return;
         }
 
-        if (_currentLength == 0)
+        // 如果代理已被清理或未启动，则直接放行，避免客户端卡在等待状态
+        if (_currentLength == 0 || _currentBuf is null)
         {
-            await _next(context);
+            context.Response.StatusCode = 404; // 返回一个明确的错误，告知客户端资源已不可用
+            await context.Response.WriteAsync("Proxy session has ended or is invalid.");
             return;
         }
 
@@ -71,11 +93,11 @@ public class MusicProxyMiddleware
             var canRead = contentLength + start - i;
             if ((int)(_read - i) > canRead)
             {
-                await context.Response.Body.WriteAsync(_currentBuf!, (int)i, (int)canRead);
+                await context.Response.Body.WriteAsync(_currentBuf, (int)i, (int)canRead);
                 break;
             }
 
-            await context.Response.Body.WriteAsync(_currentBuf!, (int)i, (int)(_read - i));
+            await context.Response.Body.WriteAsync(_currentBuf, (int)i, (int)(_read - i));
             i = _read;
         }
 
@@ -84,6 +106,7 @@ public class MusicProxyMiddleware
 
     public static async Task StartProxyAsync(MusicProxyRequest req)
     {
+        // 停止并清理上一个代理任务
         _tokenSource.Cancel();
         _tokenSource.Dispose();
         _tokenSource = new CancellationTokenSource();
@@ -91,25 +114,19 @@ public class MusicProxyMiddleware
         _currentMimeType = req.MimeType;
 
         var message = new HttpRequestMessage(HttpMethod.Get, req.Url);
-        // 强制覆盖 User-Agent（使用更真实的浏览器标识）
         message.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
-        // 强制覆盖 Referer（必须精确到具体视频页，如 https://www.bilibili.com/video/BV1xxx）
         if (req.Referer is not null)
         {
             message.Headers.Referrer = new Uri(req.Referer);
         }
         else
         {
-            // 如果 Referer 未传递，设置默认值（需结合 BVID）
             message.Headers.Referrer = new Uri("https://www.bilibili.com");
         }
 
-        // 添加 Origin 头（必须）
         message.Headers.Add("Origin", "https://www.bilibili.com");
 
-        // 传递 Cookies（关键！）
-        // 从全局 HttpClient 中获取 Cookie 并附加到本次请求
         var cookies = MusicParty.MusicApi.Bilibili.BilibiliApi.BilibiliApiGlobalCookieStorage;
         if (!string.IsNullOrEmpty(cookies))
         {
@@ -127,8 +144,7 @@ public class MusicProxyMiddleware
             var stream = await resp.Content.ReadAsStreamAsync();
             var buf = new byte[1024];
             int read;
-            while ((read = await stream.ReadAsync(buf.AsMemory(0, 1024))) > 0
-                   && !_tokenSource.IsCancellationRequested)
+            while ((read = await stream.ReadAsync(buf.AsMemory(0, 1024), _tokenSource.Token)) > 0)
             {
                 WriteBuffer(buf, read, _currentBuf, _read);
                 _read += read;

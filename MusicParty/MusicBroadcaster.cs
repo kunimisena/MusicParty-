@@ -56,14 +56,12 @@ public class MusicBroadcaster
             {
                 if (_currentAutoDjMode == AutoDjMode.Active)
                 {
-                    //_logger.LogInformation("所有活跃用户已离开，自动DJ切换到 Inactive 状态。");
                     _currentAutoDjMode = AutoDjMode.Inactive;
                 }
                 
                 if (!IsAutoDjManuallyDisabled)
                 {
                     IsAutoDjManuallyDisabled = true;
-                    //_logger.LogInformation("所有活跃用户已离开，自动点歌机器人按钮已自动恢复为禁用状态。");
                     await _context.Clients.All.SendAsync("AutoDjStatusChanged", true);
                 }
             }
@@ -77,7 +75,6 @@ public class MusicBroadcaster
                     _lastUserActivityTime = DateTime.Now;
                     if (_currentAutoDjMode == AutoDjMode.Active)
                     {
-                        //_logger.LogInformation("检测到真人用户歌曲活动，自动DJ切换到 Inactive 状态。");
                         _currentAutoDjMode = AutoDjMode.Inactive;
                     }
                 }
@@ -85,7 +82,6 @@ public class MusicBroadcaster
                 {
                     if (DateTime.Now - _lastUserActivityTime > _userActivityTimeout && _currentAutoDjMode == AutoDjMode.Inactive)
                     {
-                        //_logger.LogInformation("真人用户无活动超时，自动DJ切换到 Active 状态。");
                         _currentAutoDjMode = AutoDjMode.Active;
                     }
                 }
@@ -93,7 +89,6 @@ public class MusicBroadcaster
             
             if (_currentAutoDjMode == AutoDjMode.Active && !IsAutoDjManuallyDisabled && NowPlaying is null && !MusicQueue.Any())
             {
-                //_logger.LogInformation("自动DJ处于 Active 状态，且房间为空，执行点歌。");
                 await EnqueueRandomSongFromHistoryAsync();
             }
 
@@ -109,6 +104,15 @@ public class MusicBroadcaster
             {
                 if ((DateTime.Now - NowPlayingStartedTime).TotalMilliseconds >= NowPlaying.Value.music.Length)
                 {
+                    // --- [修改] 开始 ---
+                    // 在歌曲播放结束后，检查这首歌是否是需要代理的Bilibili歌曲
+                    if (NowPlaying.Value.music.NeedProxy)
+                    {
+                        // 如果是，则主动通知代理程序清理其状态
+                        MusicProxyMiddleware.StopAndClearProxyState();
+                    }
+                    // --- [修改] 结束 ---
+
                     await AddToHistoryAndSaveAsync(NowPlaying.Value);
                     NowPlaying = null;
                     
@@ -149,7 +153,6 @@ public class MusicBroadcaster
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Attempt {Attempt} to play {MusicId} with {Api} failed.", i + 1, musicOrder.Music.Id, musicOrder.Service);
-                //await Task.Delay(500); // Wait before retrying
             }
         }
         
@@ -184,6 +187,15 @@ public class MusicBroadcaster
     {
         if (NowPlaying is null) return;
         
+        // --- [修改] 开始 ---
+        // 在用户手动切歌时，同样检查被切掉的这首歌是否是Bilibili歌曲
+        if (NowPlaying.Value.music.NeedProxy)
+        {
+            // 如果是，则立即清理代理状态，为下一首歌做准备
+            MusicProxyMiddleware.StopAndClearProxyState();
+        }
+        // --- [修改] 结束 ---
+
         await AddToHistoryAndSaveAsync(NowPlaying.Value);
         await MusicCut(operatorId, NowPlaying.Value.music);
         NowPlaying = null;
@@ -306,4 +318,3 @@ public class MusicBroadcaster
         }
     }
 }
-
