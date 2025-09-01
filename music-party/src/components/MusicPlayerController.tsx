@@ -108,19 +108,32 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
       setTime(0);
       setLength(0);
     } else {
-      const isSameSongEnded = audio.currentSrc === src && audio.ended;
+      // 1. 判断是否是新的音频源
+      const isNewSrc = !audio.currentSrc.endsWith(src);
 
-      if (audio.src !== src) {
-        audio.src = src;
+      // 2. [关键] 判断这是不是一个“从头重播”的指令。
+      // 特征是：URL没变，但服务器要求从头开始播放 (playtime < 1)，
+      // 同时本地确实正在播放中 (audio.currentTime > 1)。
+      const isRestartCommand = !isNewSrc && playtime < 1 && audio.currentTime > 1;
+
+      // 3. 根据情况执行操作
+      if (isNewSrc && src) {
+          // A. 如果是新歌，就设置新的 src
+          audio.src = src;
+      } else if (isRestartCommand) {
+          // B. 如果是重播指令，就直接将当前音频倒带到开头
+          audio.currentTime = 0;
       }
-      
+
+      // 4. 处理“播放结束后自动重播”的逻辑
+      const isSameSongEnded = !isNewSrc && audio.ended;
       if (isSameSongEnded) {
-        audio.load();
+          audio.load();
       }
 
-      // 与服务器的开始时间同步，设置一个容差值（例如2秒）避免频繁跳动
+      // 5. [保留] 您的同步保险逻辑依然有效
       if (playtime > 0 && Math.abs(audio.currentTime - playtime) > 2) {
-        audio.currentTime = playtime;
+          audio.currentTime = playtime;
       }
 
       // 核心播放逻辑，并处理自动播放失败的情况
