@@ -39,9 +39,7 @@ export class Connection {
     autoDjStatusChanged: (isDisabled: boolean) => void,
     abort: (msg: string) => void,
     onReconnected: () => Promise<void>,
-    // [新增] 播放器同步：处理播放结束事件的回调
     stopPlayback: () => void,
-    // [新增] 播放历史动态更新：处理新历史条目事件的回调
     newPlayHistoryEntry: (entry: PlayHistoryEntry) => void
   ) {
     this._conn = new sr.HubConnectionBuilder()
@@ -61,7 +59,6 @@ export class Connection {
     this._conn.on("AutoDjStatusChanged", autoDjStatusChanged);
     this._conn.on("Abort", abort);
     
-    // [新增] 注册新的事件监听器
     this._conn.on("StopPlayback", stopPlayback);
     this._conn.on("NewPlayHistoryEntry", newPlayHistoryEntry);
 
@@ -128,6 +125,11 @@ export class Connection {
 
   public async getAutoDjStatus(): Promise<boolean> {
     return await this._conn.invoke("GetAutoDjStatus");
+  }
+  
+  // [修改] 更新方法签名以匹配新的后端逻辑
+  public async generatePlaylistFromHistory(userCookie: string, startTime: string, endTime: string): Promise<string> {
+    return await this._conn.invoke("GeneratePlaylistFromHistory", userCookie, startTime, endTime);
   }
 
   public async adminRestartServer(): Promise<void> {

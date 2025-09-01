@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useDisclosure, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Text } from '@chakra-ui/react';
 import { MusicPlayer } from './musicplayer';
 
@@ -10,12 +10,16 @@ interface MusicPlayerControllerProps {
   onReset: () => void; // “同步”按钮的回调
 }
 
+// [新增] 用于本地存储音量值的键
+const LOCALSTORAGE_VOLUME_KEY = 'music_party_volume';
+
 /**
  * 这是一个“智能”容器组件，专门负责：
  * 1. 管理 <audio> 元素的整个生命周期。
  * 2. 封装所有高频更新的状态（time, length），将“渲染风暴”隔离在此组件内部。
  * 3. 处理浏览器的自动播放策略。
- * 4. 渲染纯 UI 的 MusicPlayer 组件，向其传递所需的 props。
+ * 4. [新增] 管理音量状态、逻辑转换和持久化。
+ * 5. 渲染纯 UI 的 MusicPlayer 组件，向其传递所需的 props。
  */
 export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
   const { src, playtime, onNextClick, onReset } = props;
@@ -23,9 +27,21 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
   // 内部状态，用于驱动 UI，不会影响外部组件
   const [length, setLength] = useState(0);
   const [time, setTime] = useState(0);
+  
+  // [新增] 音量相关的状态，默认值为100（最大音量）
+  const [sliderValue, setSliderValue] = useState(100); 
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { isOpen: isAutoplayModalOpen, onOpen: onAutoplayModalOpen, onClose: onAutoplayModalClose } = useDisclosure();
+
+  // [新增] Effect 0: 首次加载时从LocalStorage恢复音量
+  useEffect(() => {
+    const savedVolume = localStorage.getItem(LOCALSTORAGE_VOLUME_KEY);
+    if (savedVolume !== null && !isNaN(Number(savedVolume))) {
+      // 确保读取的值是有效的数字
+      setSliderValue(Number(savedVolume));
+    }
+  }, []); // 空依赖数组，确保只在组件首次挂载时运行
 
   // Effect 1: 初始化和清理 <audio> 元素
   useEffect(() => {
@@ -60,11 +76,33 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
     }
   }, []); // 空依赖数组，确保此 effect 只在组件挂载时运行一次
 
+  // [新增] 核心转换函数
+  // 将滑块的线性值 (0-100) 转换为 <audio> 的对数音量 (0.0-1.0)
+  const sliderToVolume = useCallback((value: number) => {
+    if (value === 0) return 0;
+    // 1. 将滑块值映射到 -24dB 到 0dB 的范围
+    const db = -24 + (value / 100) * 24;
+    // 2. 将 dB 转换为音量增益 (gain)
+    const volume = Math.pow(10, db / 20);
+    return volume;
+  }, []);
+
+  // 将滑块的线性值 (0-100) 转换为显示的 dB 文本
+  const valueToDbText = useCallback((value: number) => {
+    if (value === 0) return "-inf dB"; // 0时表示负无穷
+    const db = -24 + (value / 100) * 24;
+    return `${db.toFixed(1)} dB`;
+  }, []);
+
+
   // Effect 2: 响应外部 props 变化，控制播放逻辑
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return; // 确保 audio 元素已创建
     
+    // [修改] 在此Effect开始时，根据当前的sliderValue设置一次音量
+    audio.volume = sliderToVolume(sliderValue);
+
     if (src === "") {
       audio.pause();
       setTime(0);
@@ -100,6 +138,16 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, playtime]); // 只依赖 `src` 和 `playtime`
 
+  // [新增] Effect 3: 响应音量滑块变化，更新audio音量并持久化
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.volume = sliderToVolume(sliderValue);
+    }
+    localStorage.setItem(LOCALSTORAGE_VOLUME_KEY, String(sliderValue));
+  }, [sliderValue, sliderToVolume]);
+
+
   return (
     <>
       {/* 纯 UI 的播放器组件 */}
@@ -108,6 +156,10 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
         length={length}
         nextClick={onNextClick}
         reset={onReset}
+        // [新增] 传递音量相关的props
+        volumeValue={sliderValue}
+        onVolumeChange={setSliderValue}
+        dbText={valueToDbText(sliderValue)}
       />
       
       {/* 用于处理自动播放限制的 Modal */}
@@ -138,4 +190,3 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
     </>
   );
 };
-

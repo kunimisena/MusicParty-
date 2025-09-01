@@ -5,13 +5,10 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
+using MusicParty.Utils;
 
 namespace MusicParty.Hub;
 
-/// <summary>
-/// "海关": 管理用户的实时在线会话 (Session)。
-/// 负责处理连接、断开、心跳，并提供准确的在线用户视图。
-/// </summary>
 [Authorize]
 public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 {
@@ -27,16 +24,15 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         public long Timestamp { get; set; }
     }
     
-    // "实时会话名单": 存储所有当前连接的用户会话。
     private static readonly ConcurrentDictionary<string, UserSession> _sessions = new();
     private static readonly TimeSpan _heartbeatTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(1);
 
-    private readonly UserManager _userManager; // "户籍处"的引用
+    private readonly UserManager _userManager; 
     private readonly MusicBroadcaster _musicBroadcaster;
     private readonly IEnumerable<IMusicApi> _musicApis;
     private readonly ILogger<MusicHub> _logger;
-    private static Timer? _cleanupTimer; // "巡逻队"定时器
+    private static Timer? _cleanupTimer; 
 
     private static readonly string _chatHistoryFilePath = "chat_history.txt";
     private static readonly object _fileLock = new object();
@@ -54,18 +50,11 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         Interlocked.CompareExchange(ref _cleanupTimer, new Timer(CleanupInactiveSessions, hubContext, _cleanupInterval, _cleanupInterval), null);
     }
     
-    // --- 静态方法，供系统其他部分查询实时状态 ---
-    
-    /// <summary>
-    /// 供 MusicBroadcaster 查询是否存在活跃用户会话。
-    /// </summary>
     public static bool HasActiveSessions()
     {
         if (_sessions.IsEmpty) return false;
         return _sessions.Values.Any(s => DateTime.UtcNow - s.LastHeartbeat < _heartbeatTimeout);
     }
-
-    // --- SignalR 生命周期事件 ---
 
     public override async Task OnConnectedAsync()
     {
@@ -73,7 +62,6 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         var session = new UserSession(userId, DateTime.UtcNow);
 
         _sessions[userId] = session;
-        //_logger.LogInformation("User connected. Session created for {UserId}.", userId);
         
         _userManager.UpdateUserLastSeen(userId);
 
@@ -99,14 +87,11 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         if (_sessions.TryRemove(userId, out _))
         {
-            //_logger.LogInformation("User disconnected. Session removed for {UserId}.", userId);
             await OnlineUserLogout(userId);
         }
 
         await base.OnDisconnectedAsync(exception);
     }
-
-    // --- 客户端可调用方法 (RPC) ---
 
     #region RPC Methods
     
@@ -172,7 +157,6 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         await _musicBroadcaster.EnqueueMusic(music, apiName, Context.User!.Identity!.Name!);
     }
     
-    // [修正] 补全缺失的 ReplayMusic 方法
     public async Task ReplayMusic(Music music, string apiName)
     {
         if (!_musicApis.TryGetMusicApi(apiName, out _))
@@ -216,14 +200,12 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     
     public List<ChatMessage> GetChatHistory() => _messageQueue.ToList();
 
-    // [修正] 补全缺失的 GetPlayHistory 方法
     public IEnumerable<object> GetPlayHistory()
     {
         return _musicBroadcaster.GetPlayHistory().Select(x =>
             new { x.Music, x.ApiName, x.EnqueuerName, x.Timestamp });
     }
 
-    // [修正] 补全缺失的 AutoDJ 相关方法
     public async Task DisableAutoDj()
     {
         MusicBroadcaster.IsAutoDjManuallyDisabled = true;
@@ -241,7 +223,15 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         return MusicBroadcaster.IsAutoDjManuallyDisabled;
     }
 
-        public Task AdminRestartServer()
+    // [修改] 更新方法签名以匹配新的前端请求
+    public async Task<string> GeneratePlaylistFromHistory(string userCookie, string startTime, string endTime)
+    {
+        var history = _musicBroadcaster.GetPlayHistory();
+        var result = await PlaylistGenerator.CreateNeteasePlaylistAsync(history, userCookie, startTime, endTime);
+        return result;
+    }
+
+    public Task AdminRestartServer()
     {
         _logger.LogWarning("Admin user {UserId} triggered a server restart.", Context.UserIdentifier);
         
@@ -249,11 +239,6 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         if (File.Exists(scriptPath))
         {
-            // 修正:
-            // 我们不直接运行 .bat 文件，而是启动一个新的 cmd.exe 进程。
-            // 使用 /c "start ..." 参数，让这个新的 cmd 进程通过 start 命令
-            // 在一个全新的、独立的窗口中运行我们的 #test.bat 脚本。
-            // 这就为脚本提供了它所需要的“交互式”环境，使其能够成功重启服务。
             Process.Start("cmd.exe", $"/c start \"Restarting Server\" \"{scriptPath}\"");
         }
         else
@@ -363,3 +348,4 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         }
     }
 }
+

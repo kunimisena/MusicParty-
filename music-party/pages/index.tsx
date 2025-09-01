@@ -5,9 +5,9 @@ import {
   Text, Button, Card, CardBody, CardHeader, Grid, GridItem, Heading, Input, ListItem,
   Tab, TabList, TabPanel, TabPanels, Tabs, useToast, Stack, Popover,
   PopoverBody, PopoverCloseButton, PopoverContent, PopoverFooter, PopoverHeader,
-  PopoverTrigger, Portal, UnorderedList, Flex, RadioGroup, Radio, Box, Divider, Select, Textarea,
+  PopoverTrigger, Portal, UnorderedList, Flex, Box
 } from '@chakra-ui/react';
-import { getMusicApis, setCredential } from '../src/api/api';
+import { getMusicApis } from '../src/api/api';
 import { NeteaseBinder } from '../src/components/neteasebinder';
 import { MyPlaylist } from '../src/components/myplaylist';
 import { MusicSelector } from '../src/components/musicselector';
@@ -19,6 +19,10 @@ import { PlayHistory } from '../src/components/playhistory';
 import { ThemeContext, ThemeKey } from './_app';
 import { MarqueeText } from '../src/components/MarqueeText';
 import { MusicPlayerController } from '../src/components/MusicPlayerController';
+// [新增] 引入新的AdminPanel组件
+import { AdminPanel } from '../src/components/Admin';
+import { Radio, RadioGroup } from '@chakra-ui/react';
+
 
 interface NowPlayingDisplayProps {
   nowPlaying?: {
@@ -158,65 +162,6 @@ const ChatSection = React.memo(function ChatSection({
     );
 });
 
-
-// ==================================================================
-// 第 3 步: 实现“统一更新凭据”功能
-// ==================================================================
-// 3.2: 创建一个独立的表单组件，用于更新凭据
-const UpdateCredentialForm = () => {
-  const [apiName, setApiName] = useState('NeteaseCloudMusic');
-  const [newValue, setNewValue] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const t = useToast();
-
-  const handleSubmit = async () => {
-    if (!newValue.trim()) {
-      t({ title: '错误', description: '凭据内容不能为空', status: 'error', isClosable: true, position: 'top' });
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      await setCredential(apiName, newValue.trim());
-      t({ title: '成功', description: `${apiName} 的凭据已成功更新。`, status: 'success', isClosable: true, position: 'top' });
-      setNewValue('');
-    } catch (e: any) {
-      t({ title: '更新失败', description: e.message, status: 'error', isClosable: true, position: 'top' });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <Stack spacing={4} align="start">
-      <Heading size="md">凭据管理</Heading>
-      <Text fontSize="sm" color="text.2">
-        在此更新各平台API的凭据（如 Cookie, SESSDATA 等）。更新成功后会自动保存，服务器重启后依然有效。
-      </Text>
-      <Select value={apiName} onChange={(e) => setApiName(e.target.value)} w="full">
-        <option value="NeteaseCloudMusic">网易云 (Cookie)</option>
-        <option value="QQMusic">QQ音乐 (Cookie)</option>
-        <option value="Bilibili">Bilibili (SESSDATA)</option>
-        {/* <option value="KuGouMusic">酷狗 (Token)</option> */}
-      </Select>
-      <Textarea 
-        placeholder="在此处粘贴新的凭据内容"
-        value={newValue}
-        onChange={(e) => setNewValue(e.target.value)}
-        w="full"
-        minH="120px"
-      />
-      <Button onClick={handleSubmit} colorScheme="teal" isLoading={isSubmitting}>
-        更新凭据
-      </Button>
-      <Text fontSize="xs" color="text.2" pt={2}>
-        <b>关于酷狗:</b> 酷狗的凭据(Token)需要通过手机验证码在服务器后台首次运行时生成，无法在此处直接更新。如需更新，请联系网站部署者。
-      </Text>
-    </Stack>
-  );
-};
-// ==================================================================
-
-
 export default function Home() {
   const [src, setSrc] = useState('');
   const [playtime, setPlaytime] = useState(0);
@@ -240,15 +185,9 @@ export default function Home() {
   const [playHistory, setPlayHistory] = useState<PlayHistoryEntry[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
-  // ==================================================================
-  // 第 1 步: 解锁管理员界面
-  // ==================================================================
-  // 1.1: 定义管理员密码 (请务必修改为一个更安全的密码)
-  const ADMIN_PASSWORD = "admin"; // 警告: 这只是一个示例密码，建议您修改
-
-  // 1.2: 添加一个 state 来控制管理员Tab的显示
+  // [修改] 您的管理员密码
+  const ADMIN_PASSWORD = "admin"; // 警告: 这只是一个示例密码
   const [isAdmin, setIsAdmin] = useState(false);
-  // ==================================================================
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -442,22 +381,17 @@ export default function Home() {
                               <Input value={newName} placeholder={'输入新名字'} onChange={(e) => setNewName(e.target.value)} />
                             </PopoverBody>
                             <PopoverFooter>
-                              {/* ================================================================== */}
-                              {/* 1.3: 修改"确认"按钮的 onClick 事件 */}
-                              {/* ================================================================== */}
                               <Button w="full" onClick={async () => {
                                   const trimmedName = newName.trim();
-                                  
-                                  // 核心逻辑: 检查输入是否为管理员密码
+                                  // [修改] 直接比较，不再转换大小写，以匹配中文密码
                                   if (trimmedName === ADMIN_PASSWORD) {
-                                    setIsAdmin(true); // 解锁管理员功能
+                                    setIsAdmin(true); 
                                     t({ title: '提示', description: '管理员后台已解锁', status: 'info', duration: 3000, isClosable: true, position: 'top' });
-                                    onClose(); // 关闭弹窗
-                                    setNewName(''); // 清空输入框
-                                    return; // 阻止后续的改名操作
+                                    onClose(); 
+                                    setNewName('');
+                                    return;
                                   }
 
-                                  // --- 原有的改名逻辑保持不变 ---
                                   if (trimmedName === '') {
                                     t({ title: '提示', description: "新名字不能为空", status: 'info', duration: 3000, isClosable: true, position: 'bottom' });
                                     return;
@@ -470,7 +404,6 @@ export default function Home() {
                                   onClose(); setNewName('');
                                 }}
                               >确认</Button>
-                              {/* ================================================================== */}
                             </PopoverFooter>
                           </PopoverContent>
                         </Portal>
@@ -496,7 +429,7 @@ export default function Home() {
                           </PopoverContent>
                       </Portal>
                   </Popover>
-
+                  
                   <Button
                       onClick={() => { isAutoDjDisabled ? conn.current?.enableAutoDj() : conn.current?.disableAutoDj(); }}
                       w="full"
@@ -535,20 +468,15 @@ export default function Home() {
           </Card>
 
           <Tabs variant='soft-rounded' isLazy>
-            {/* ================================================================== */}
-            {/* 1.4: 条件性地渲染管理员 Tab 和 TabPanel */}
-            {/* ================================================================== */}
             <TabList m={4} mt={0}>
                 <Tab>播放队列</Tab>
                 <Tab>从ID或链接点歌</Tab>
                 <Tab>从歌单点歌</Tab>
                 <Tab>播放历史</Tab>
-                {/* 当 isAdmin 为 true 时，渲染这个新的Tab */}
                 {isAdmin && <Tab>🔧 管理员后台</Tab>}
             </TabList>
             <TabPanels>
               <TabPanel pt={0}>
-                {/* 1. 为播放队列的 Card 添加 minH */}
                 <Card minH={{ base: '60vh', md: '70vh' }}>
                   <CardBody>
                     <MusicQueue queue={queue} top={(actionId) => conn.current!.topSong(actionId)} />
@@ -556,7 +484,6 @@ export default function Home() {
                 </Card>
               </TabPanel>
               <TabPanel pt={0}>
-                {/* 2. 为点歌的 Card 添加 minH */}
                 <Card minH={{ base: '60vh', md: '70vh' }}>
                   <CardBody>
                     <MusicSelector apis={apis} conn={conn.current!} />
@@ -564,7 +491,6 @@ export default function Home() {
                 </Card>
               </TabPanel>
               <TabPanel pt={0}>
-                {/* 3. 为歌单的 Card 添加 minH */}
                 <Card minH={{ base: '60vh', md: '70vh' }}>
                     <CardBody>
                         {!isConnReady ? <Text>初始化...</Text> : <MyPlaylist apis={apis} enqueue={(id, apiName) => { conn.current!.enqueueMusic(id, apiName).then(() => t({ title: '成功加入队列', status: 'success', duration: 3000, isClosable: true, position: 'bottom' })).catch(() => t({ title: '错误', description: `音乐加入队列失败`, status: 'error', duration: 5000, isClosable: true, position: 'bottom' })); }} />}
@@ -572,7 +498,6 @@ export default function Home() {
                 </Card>
               </TabPanel>
               <TabPanel pt={0}>
-                {/* 4. 这里的 Card 已经包含了 PlayHistory，其内部有自己的高度控制，所以我们不需要再加 */}
                 <Card>
                   <CardBody>
                     <PlayHistory conn={conn.current} isConnReady={isConnReady} history={playHistory} isLoading={isHistoryLoading} />
@@ -580,47 +505,12 @@ export default function Home() {
                 </Card>
               </TabPanel>
 
-              {/* 当 isAdmin 为 true 时，渲染这个新的TabPanel */}
+              {/* [修改] 移除内联管理员面板，替换为AdminPanel组件引用 */}
               {isAdmin && (
                 <TabPanel pt={0}>
-                  <Card minH={{ base: '60vh', md: '70vh' }}>
-                    <CardBody>
-                      <Heading size="lg" mb={6}>管理员面板</Heading>
-                      {/* ================================================================== */}
-                      {/* 第 2 步: 实现“重启服务器”功能 */}
-                      {/* ================================================================== */}
-                      {/* 2.3: 在管理员面板中添加UI元素 */}
-                      <Stack spacing={4} align="start">
-                        <Heading size="md">服务器管理</Heading>
-                        <Text fontSize="sm" color="text.2">
-                          点击下面的按钮将会执行服务器上的 <code>#test.bat</code> 脚本来重启服务。<br />
-                          点击后，您与服务器的连接将立即断开。请<b>等待大约 5-10 秒</b>后，<b>手动刷新</b>此页面以重新连接。
-                        </Text>
-                        <Button
-                          colorScheme="red"
-                          onClick={() => {
-                            if (window.confirm("您确定要重启服务器吗？\n\n此操作将中断所有在线用户的连接。")) {
-                              conn.current?.adminRestartServer().catch(err => {
-                                t({ title: '错误', description: `重启命令发送失败: ${err.message}`, status: 'error', duration: 5000, isClosable: true, position: 'top' });
-                              });
-                              t({ title: '指令已发送', description: '服务器正在重启，请稍后刷新页面。', status: 'warning', duration: 5000, isClosable: true, position: 'top' });
-                            }
-                          }}
-                        >
-                          重启服务器
-                        </Button>
-                      </Stack>
-                      
-                      {/* 3.3: 在管理员面板中添加分割线和新组件 */}
-                      <Divider my={6} />
-                      <UpdateCredentialForm />
-                      
-                      {/* ================================================================== */}
-                    </CardBody>
-                  </Card>
+                  <AdminPanel conn={conn.current} />
                 </TabPanel>
               )}
-              {/* ================================================================== */}
             </TabPanels>
           </Tabs>
         </GridItem>
@@ -628,7 +518,4 @@ export default function Home() {
     </>
   );
 }
-
-
-
 

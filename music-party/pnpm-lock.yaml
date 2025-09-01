@@ -48,8 +48,8 @@ importers:
         specifier: ^15.3.2
         version: 15.5.2(@babel/core@7.28.3)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       pnpm:
-        specifier: ^10.15.0
-        version: 10.15.0
+        specifier: ^10.15.1
+        version: 10.15.1
       react:
         specifier: 18.2.0
         version: 18.2.0
@@ -799,8 +799,8 @@ packages:
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
-  pnpm@10.15.0:
-    resolution: {integrity: sha512-SG68JZ0+mZpOhpHOA7XKxKccvso5Nyqbdiy1AM/fCHPiyxar49lRse4s8BJQPwJ7mLZYTk3yJSTgx0UNnseqew==}
+  pnpm@10.15.1:
+    resolution: {integrity: sha512-NOU4wym1VTAUyo6PRTWZf5YYCh0PYUM5NXRJk1NQ2STiL4YUaCGRJk7DPRRirCFWGv+X9rsYBlNRwWLH6PbeZw==}
     engines: {node: '>=18.12'}
     hasBin: true
 
@@ -1824,7 +1824,7 @@ snapshots:
 
   picocolors@1.1.1: {}
 
-  pnpm@10.15.0: {}
+  pnpm@10.15.1: {}
 
   popmotion@11.0.3:
     dependencies:
