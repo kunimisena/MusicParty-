@@ -25,7 +25,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     }
     
     private static readonly ConcurrentDictionary<string, UserSession> _sessions = new();
-    private static readonly TimeSpan _heartbeatTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan _heartbeatTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(1);
 
     private readonly UserManager _userManager; 
@@ -185,11 +185,21 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     
     public async Task RequestSetNowPlaying()
     {
-        if (_musicBroadcaster.NowPlaying is null) return;
-        var (music, _, enqueuerName, _, _) = _musicBroadcaster.NowPlaying.Value;
-        
-        await Clients.Caller.SendAsync("SetNowPlaying", music, enqueuerName,
-            (int)(DateTime.Now - _musicBroadcaster.NowPlayingStartedTime).TotalSeconds);
+        // --- [最终版核心修改] ---
+        // 修复了同步按钮在歌曲播放完毕后失效的致命BUG
+        if (_musicBroadcaster.NowPlaying is null)
+        {
+            // 如果服务器当前没有歌曲在播放，不能再保持沉默。
+            // 必须明确告知客户端“停止播放”，以便客户端UI能被纠正到正确的状态。
+            await Clients.Caller.SendAsync("StopPlayback");
+        }
+        else
+        {
+            // 如果有歌曲在播放，则按原逻辑发送同步信息。
+            var (music, _, enqueuerName, _, _) = _musicBroadcaster.NowPlaying.Value;
+            await Clients.Caller.SendAsync("SetNowPlaying", music, enqueuerName,
+                (int)(DateTime.Now - _musicBroadcaster.NowPlayingStartedTime).TotalSeconds);
+        }
     }
 
     public IEnumerable<object> GetMusicQueue()
@@ -222,8 +232,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     {
         return MusicBroadcaster.IsAutoDjManuallyDisabled;
     }
-
-    // [修改] 更新方法签名以匹配新的前端请求
+    
     public async Task<string> GeneratePlaylistFromHistory(string userCookie, string startTime, string endTime)
     {
         var history = _musicBroadcaster.GetPlayHistory();

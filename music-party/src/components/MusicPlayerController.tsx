@@ -10,46 +10,30 @@ interface MusicPlayerControllerProps {
   onReset: () => void; // “同步”按钮的回调
 }
 
-// [新增] 用于本地存储音量值的键
 const LOCALSTORAGE_VOLUME_KEY = 'music_party_volume';
 
-/**
- * 这是一个“智能”容器组件，专门负责：
- * 1. 管理 <audio> 元素的整个生命周期。
- * 2. 封装所有高频更新的状态（time, length），将“渲染风暴”隔离在此组件内部。
- * 3. 处理浏览器的自动播放策略。
- * 4. [新增] 管理音量状态、逻辑转换和持久化。
- * 5. 渲染纯 UI 的 MusicPlayer 组件，向其传递所需的 props。
- */
 export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
   const { src, playtime, onNextClick, onReset } = props;
 
-  // 内部状态，用于驱动 UI，不会影响外部组件
   const [length, setLength] = useState(0);
   const [time, setTime] = useState(0);
-  
-  // [新增] 音量相关的状态，默认值为100（最大音量）
   const [sliderValue, setSliderValue] = useState(100); 
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isInitialLoadForSrc = useRef(true); // 用于跟踪是否是某个src的首次加载
   const { isOpen: isAutoplayModalOpen, onOpen: onAutoplayModalOpen, onClose: onAutoplayModalClose } = useDisclosure();
 
-  // [新增] Effect 0: 首次加载时从LocalStorage恢复音量
   useEffect(() => {
     const savedVolume = localStorage.getItem(LOCALSTORAGE_VOLUME_KEY);
     if (savedVolume !== null && !isNaN(Number(savedVolume))) {
-      // 确保读取的值是有效的数字
       setSliderValue(Number(savedVolume));
     }
-  }, []); // 空依赖数组，确保只在组件首次挂载时运行
+  }, []);
 
-  // Effect 1: 初始化和清理 <audio> 元素
   useEffect(() => {
-    // 实例化 audio 元素，并保存在 ref 中，确保在组件生命周期内唯一
     const audio = new Audio();
     audioRef.current = audio;
 
-    // --- 事件监听器 ---
     const handleDurationChange = () => {
       const duration = audio.duration;
       setLength(duration && isFinite(duration) ? duration : 0);
@@ -65,93 +49,86 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("ended", handleEnded);
     
-    // --- 清理函数 ---
     return () => {
-      // 组件卸载时，确保停止所有事件监听并清理资源
       audio.removeEventListener("durationchange", handleDurationChange);
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("ended", handleEnded);
       audio.pause();
       audio.src = "";
     }
-  }, []); // 空依赖数组，确保此 effect 只在组件挂载时运行一次
-
-  // [新增] 核心转换函数
-  // 将滑块的线性值 (0-100) 转换为 <audio> 的对数音量 (0.0-1.0)
-  const sliderToVolume = useCallback((value: number) => {
-    if (value === 0) return 0;
-    // 1. 将滑块值映射到 -24dB 到 0dB 的范围
-    const db = -24 + (value / 100) * 24;
-    // 2. 将 dB 转换为音量增益 (gain)
-    const volume = Math.pow(10, db / 20);
-    return volume;
   }, []);
 
-  // 将滑块的线性值 (0-100) 转换为显示的 dB 文本
+  const sliderToVolume = useCallback((value: number) => {
+    if (value === 0) return 0;
+    const db = -24 + (value / 100) * 24;
+    return Math.pow(10, db / 20);
+  }, []);
+
   const valueToDbText = useCallback((value: number) => {
-    if (value === 0) return "-inf dB"; // 0时表示负无穷
+    if (value === 0) return "-inf dB";
     const db = -24 + (value / 100) * 24;
     return `${db.toFixed(1)} dB`;
   }, []);
 
-
-  // Effect 2: 响应外部 props 变化，控制播放逻辑
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return; // 确保 audio 元素已创建
+    if (!audio) return;
     
-    // [修改] 在此Effect开始时，根据当前的sliderValue设置一次音量
     audio.volume = sliderToVolume(sliderValue);
 
     if (src === "") {
       audio.pause();
+      audio.src = ""; // 确保完全重置
       setTime(0);
       setLength(0);
     } else {
-      // 1. 判断是否是新的音频源
       const isNewSrc = !audio.currentSrc.endsWith(src);
-
-      // 2. [关键] 判断这是不是一个“从头重播”的指令。
-      // 特征是：URL没变，但服务器要求从头开始播放 (playtime < 1)，
-      // 同时本地确实正在播放中 (audio.currentTime > 1)。
-      const isRestartCommand = !isNewSrc && playtime < 1 && audio.currentTime > 1;
-
-      // 3. 根据情况执行操作
-      if (isNewSrc && src) {
-          // A. 如果是新歌，就设置新的 src
-          audio.src = src;
-      } else if (isRestartCommand) {
-          // B. 如果是重播指令，就直接将当前音频倒带到开头
-          audio.currentTime = 0;
+      
+      if (isNewSrc) {
+        isInitialLoadForSrc.current = true;
+        audio.src = src;
+        audio.load(); // 显式告诉浏览器开始加载新资源
+      } else {
+        isInitialLoadForSrc.current = false;
       }
 
-      // 4. 处理“播放结束后自动重播”的逻辑
-      const isSameSongEnded = !isNewSrc && audio.ended;
-      if (isSameSongEnded) {
-          audio.load();
-      }
+      // --- [最终版 Firefox 兼容性修复] ---
+      // 这是一个健壮的、事件驱动的播放/同步逻辑，专门解决Firefox的竞速问题
 
-      // 5. [保留] 您的同步保险逻辑依然有效
-      if (playtime > 0 && Math.abs(audio.currentTime - playtime) > 2) {
+      const playAudio = () => {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((error: DOMException) => {
+            if (error.name === "NotAllowedError") {
+              onAutoplayModalOpen();
+            } else {
+              console.error("Playback failed:", error);
+            }
+          });
+        }
+      };
+
+      if (isInitialLoadForSrc.current) {
+        // 对于新加载的歌曲（特别是Firefox首次加载），我们必须等待浏览器准备好
+        const handleCanPlay = () => {
+          console.log(`canplay event fired. Ready to seek. Setting time to ${playtime}`);
           audio.currentTime = playtime;
-      }
-
-      // 核心播放逻辑，并处理自动播放失败的情况
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((e: DOMException) => {
-          if (e.name === "NotAllowedError") {
-            onAutoplayModalOpen();
-          } else {
-            console.error("Audio play error:", e);
-          }
-        });
+          playAudio();
+          // 清理监听器，防止重复执行
+          audio.removeEventListener('canplay', handleCanPlay);
+        };
+        audio.addEventListener('canplay', handleCanPlay);
+      } else {
+        // 对于已经加载的歌曲，直接播放和同步即可
+        const timeDiff = Math.abs(audio.currentTime - playtime);
+        if (timeDiff > 2) {
+           audio.currentTime = playtime;
+        }
+        playAudio();
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, playtime]); // 只依赖 `src` 和 `playtime`
+  }, [src, playtime, sliderToVolume, onAutoplayModalOpen]); 
 
-  // [新增] Effect 3: 响应音量滑块变化，更新audio音量并持久化
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) {
@@ -160,22 +137,18 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
     localStorage.setItem(LOCALSTORAGE_VOLUME_KEY, String(sliderValue));
   }, [sliderValue, sliderToVolume]);
 
-
   return (
     <>
-      {/* 纯 UI 的播放器组件 */}
       <MusicPlayer
         time={time}
         length={length}
         nextClick={onNextClick}
         reset={onReset}
-        // [新增] 传递音量相关的props
         volumeValue={sliderValue}
         onVolumeChange={setSliderValue}
         dbText={valueToDbText(sliderValue)}
       />
       
-      {/* 用于处理自动播放限制的 Modal */}
       <Modal isOpen={isAutoplayModalOpen} onClose={onAutoplayModalClose} isCentered>
         <ModalOverlay />
         <ModalContent>
@@ -203,3 +176,4 @@ export const MusicPlayerController = (props: MusicPlayerControllerProps) => {
     </>
   );
 };
+
