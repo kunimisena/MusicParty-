@@ -116,7 +116,14 @@ const ChatMessageItem = React.memo(function ChatMessageItem({ msg }: { msg: Chat
     return (
       <ListItem p={2} borderRadius="md" wordBreak="break-word">
         <Text as="span" fontSize="xs" color="text.2" mr={2}>
-          {new Date(msg.timestamp).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+          {new Date(msg.timestamp).toLocaleString('zh-CN', { 
+              month: '2-digit', 
+              day: '2-digit', 
+              hour: '2-digit', 
+              minute: '2-digit', 
+              second: '2-digit', 
+              hour12: false 
+          })}
         </Text>
         <Text as="span" fontWeight="bold">{msg.name}:</Text>
         <Text as="span" ml={2} whiteSpace="pre-wrap" overflowWrap="break-word" display="inline-block" maxW="full">{msg.content}</Text>
@@ -467,7 +474,7 @@ export default function Home() {
             </CardBody>
           </Card>
 
-          <Tabs variant='soft-rounded' isLazy>
+          <Tabs variant='soft-rounded'>
             <TabList m={4} mt={0}>
                 <Tab>播放队列</Tab>
                 <Tab>从ID或链接点歌</Tab>

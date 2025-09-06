@@ -2,6 +2,7 @@ import {
   Box,
   Button,
   Flex,
+  Input, // [新增] 引入Input组件
   List,
   ListItem,
   Stack,
@@ -11,7 +12,7 @@ import {
   Skeleton,
   useBreakpointValue
 } from '@chakra-ui/react';
-import React, { CSSProperties, useRef, useState, useEffect, memo } from 'react';
+import React, { CSSProperties, useRef, useState, useEffect, memo, useMemo } from 'react'; // [新增] 引入 useMemo
 import { FixedSizeList } from 'react-window';
 import { Connection, HistoryMusic, PlayHistoryEntry } from '../api/musichub';
 import { MarqueeText } from './MarqueeText';
@@ -28,6 +29,8 @@ export const PlayHistory = memo((props: PlayHistoryProps) => {
   const t = useToast();
   const listContainerRef = useRef<HTMLDivElement>(null);
   const [listHeight, setListHeight] = useState(0);
+  // [新增] 用于存储用户输入的搜索词
+  const [searchTerm, setSearchTerm] = useState('');
 
   const itemSize = useBreakpointValue({ base: 120, md: 95 });
 
@@ -45,6 +48,23 @@ export const PlayHistory = memo((props: PlayHistoryProps) => {
     return () => resizeObserver.disconnect();
   }, []);
 
+  // [新增] 使用 useMemo 进行性能优化，只有在 history 或 searchTerm 变化时才重新计算过滤结果
+  const filteredHistory = useMemo(() => {
+    if (!searchTerm) {
+      return history;
+    }
+    const lowerCaseSearch = searchTerm.toLowerCase();
+    return history.filter(entry => {
+      const songName = entry.music.name.toLowerCase();
+      const artists = entry.music.artists.join(' / ').toLowerCase();
+      const enqueuer = entry.enqueuerName.toLowerCase();
+
+      return songName.includes(lowerCaseSearch) ||
+             artists.includes(lowerCaseSearch) ||
+             enqueuer.includes(lowerCaseSearch);
+    });
+  }, [history, searchTerm]);
+
 
   const handleReplay = (music: HistoryMusic, apiName: string) => {
     if (!conn) return;
@@ -59,7 +79,8 @@ export const PlayHistory = memo((props: PlayHistoryProps) => {
   };
 
   const Row = ({ index, style }: { index: number; style: CSSProperties }) => {
-    const entry = history[index];
+    // [修改] 从过滤后的列表中获取数据
+    const entry = filteredHistory[index];
     return (
       <ListItem key={`${entry.music.id}-${entry.timestamp}`} style={style} py={2} px={4} _hover={{ bg: 'bg.2' }} listStyleType="none">
         <Flex
@@ -93,6 +114,14 @@ export const PlayHistory = memo((props: PlayHistoryProps) => {
   return (
     <Stack spacing={4} mt={4}>
       <Text fontSize="2xl" fontWeight="bold">播放历史</Text>
+      {/* [外观修改] 这里是新增的搜索框，你可以调整它的样式 */}
+      <Input
+        placeholder="搜索歌名、歌手或点歌人..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        variant="outline"
+        size="md"
+      />
       <Divider />
       <Box
         ref={listContainerRef}
@@ -103,16 +132,25 @@ export const PlayHistory = memo((props: PlayHistoryProps) => {
       >
         <Skeleton isLoaded={!isLoading} height="100%">
           {history.length > 0 ? (
-            <FixedSizeList
-              height={listHeight}
-              itemCount={history.length}
-              itemSize={itemSize ?? 120}
-              width="100%"
-              innerElementType={List}
-            >
-              {Row}
-            </FixedSizeList>
+            // [修改] 如果过滤后有结果，则显示列表
+            filteredHistory.length > 0 ? (
+              <FixedSizeList
+                height={listHeight}
+                itemCount={filteredHistory.length} // 使用过滤后数组的长度
+                itemSize={itemSize ?? 120}
+                width="100%"
+                innerElementType={List}
+              >
+                {Row}
+              </FixedSizeList>
+            ) : (
+              // [修改] 如果过滤后没有结果，显示提示信息
+              <Box p={4}>
+                <Text>没有找到匹配的结果。</Text>
+              </Box>
+            )
           ) : (
+             // 原始的无历史记录提示
              <Box p={4}>
                 <Text>还没有播放历史哦，快去点歌吧！</Text>
              </Box>
@@ -124,4 +162,3 @@ export const PlayHistory = memo((props: PlayHistoryProps) => {
 });
 
 PlayHistory.displayName = 'PlayHistory';
-
