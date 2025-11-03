@@ -208,6 +208,7 @@ export default function Home() {
     maxRooms: 20,
     maxOwnedRooms: 2,
     maxDurationMinutes: 120,
+    maxAdvanceHours: 72,
   });
   const [recentVisitors, setRecentVisitors] = useState<RecentVisitor[]>([]);
 

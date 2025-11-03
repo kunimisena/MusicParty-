@@ -38,6 +38,7 @@ export interface ReservationConfig {
   maxRooms: number;
   maxOwnedRooms: number;
   maxDurationMinutes: number;
+  maxAdvanceHours: number;
 }
 
 export interface RecentVisitor {

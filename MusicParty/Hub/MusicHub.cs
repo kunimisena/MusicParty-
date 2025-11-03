@@ -44,6 +44,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     private const int ReservationMaxRooms = 20;
     private const int ReservationMaxOwnedRooms = 2;
     private const int ReservationMaxDurationMinutes = 120;
+    private const int ReservationMinLeadMinutes = 10;
+    private const int ReservationMaxAdvanceHours = 72;
     private static readonly object _reservationLock = new();
     private static readonly List<ReservationRoom> _reservations = new();
     private static UserManager? _reservationUserManager;
@@ -290,9 +292,14 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         startTimeUtc = DateTime.SpecifyKind(startTimeUtc, DateTimeKind.Utc);
 
-        if (startTimeUtc < nowUtc.AddMinutes(10))
+        if (startTimeUtc < nowUtc.AddMinutes(ReservationMinLeadMinutes))
         {
-            throw new HubException("开始时间至少需要晚于当前时间 10 分钟。");
+            throw new HubException($"开始时间至少需要晚于当前时间 {ReservationMinLeadMinutes} 分钟。");
+        }
+
+        if (startTimeUtc > nowUtc.AddHours(ReservationMaxAdvanceHours))
+        {
+            throw new HubException($"开始时间最多只能晚于当前时间 {ReservationMaxAdvanceHours / 24} 天。");
         }
 
         lock (_reservationLock)
@@ -346,9 +353,11 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
                 throw new HubException("预约不存在或已被删除。");
             }
 
-            if (room.GetStatus(nowUtc) == ReservationStatus.Ended)
+            var status = room.GetStatus(nowUtc);
+
+            if (status == ReservationStatus.Ended)
             {
-                throw new HubException("该预约已结束。");
+                throw new HubException("该预约已结束，无法加入。");
             }
 
             if (room.Participants.Any(p => p.UserId == userId))
@@ -369,7 +378,14 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     public async Task LeaveReservation(string reservationId)
     {
         var userId = Context.User!.Identity!.Name!;
-        if (RemoveUserFromReservations(userId, reservationId))
+        var changed = TryRemoveUserFromReservations(userId, out var errorMessage, reservationId);
+
+        if (!string.IsNullOrEmpty(errorMessage))
+        {
+            throw new HubException(errorMessage);
+        }
+
+        if (changed)
         {
             await Clients.All.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
         }
@@ -491,9 +507,11 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         }
     }
 
-    private static bool RemoveUserFromReservations(string userId, string? reservationId = null)
+    private static bool TryRemoveUserFromReservations(string userId, out string? errorMessage, string? reservationId = null)
     {
         var changed = false;
+        errorMessage = null;
+
         lock (_reservationLock)
         {
             var nowUtc = DateTime.UtcNow;
@@ -501,10 +519,36 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
                 ? _reservations.ToList()
                 : _reservations.Where(room => room.Id == reservationId).ToList();
 
+            if (reservationId is not null && targetRooms.Count == 0)
+            {
+                errorMessage = "预约不存在或已被删除。";
+                return false;
+            }
+
             foreach (var room in targetRooms)
             {
+                var status = room.GetStatus(nowUtc);
                 var participantIndex = room.Participants.FindIndex(p => p.UserId == userId);
-                if (participantIndex < 0) continue;
+
+                if (participantIndex < 0)
+                {
+                    continue;
+                }
+
+                if (status != ReservationStatus.Upcoming)
+                {
+                    if (reservationId is not null)
+                    {
+                        errorMessage = status switch
+                        {
+                            ReservationStatus.Ongoing => "进行中的预约暂不支持离开。",
+                            _ => "该预约已结束，无法离开。"
+                        };
+                        break;
+                    }
+
+                    continue;
+                }
 
                 room.Participants.RemoveAt(participantIndex);
                 changed = true;
@@ -633,7 +677,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             {
                 maxRooms = ReservationMaxRooms,
                 maxOwnedRooms = ReservationMaxOwnedRooms,
-                maxDurationMinutes = ReservationMaxDurationMinutes
+                maxDurationMinutes = ReservationMaxDurationMinutes,
+                maxAdvanceHours = ReservationMaxAdvanceHours
             },
             recentVisitors
         };

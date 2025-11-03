@@ -29,6 +29,7 @@ import {
   RecentVisitor,
   ReservationConfig,
   ReservationCreationPayload,
+  ReservationStatus,
   ReservationRoom,
 } from '../api/musichub';
 
@@ -38,11 +39,29 @@ const statusLabelMap: Record<string, string> = {
   Ended: '已结束',
 };
 
-const getMinStartLocalString = () => {
-  const minDate = new Date(Date.now() + 10 * 60 * 1000);
+const DEFAULT_MAX_ADVANCE_HOURS = 72;
+
+const formatNowLabel = (timestamp: number) =>
+  new Date(timestamp).toLocaleTimeString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+const getMinStartLocalString = (baseTimestamp: number) => {
+  const minDate = new Date(baseTimestamp + 10 * 60 * 1000);
   minDate.setSeconds(0, 0);
   const tzOffset = minDate.getTimezoneOffset() * 60000;
   return new Date(minDate.getTime() - tzOffset).toISOString().slice(0, 16);
+};
+
+const getMaxStartLocalString = (baseTimestamp: number, maxAdvanceHours: number) => {
+  const maxDate = new Date(baseTimestamp + maxAdvanceHours * 60 * 60 * 1000);
+  maxDate.setSeconds(0, 0);
+  const tzOffset = maxDate.getTimezoneOffset() * 60000;
+  return new Date(maxDate.getTime() - tzOffset).toISOString().slice(0, 16);
 };
 
 const formatDateRange = (room: ReservationRoom) => {
@@ -93,10 +112,7 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
   const [expandedRoom, setExpandedRoom] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [processingRoomId, setProcessingRoomId] = useState<string | null>(null);
-  const [minStart, setMinStart] = useState(getMinStartLocalString());
-  const [nowLabel, setNowLabel] = useState(
-    new Date().toLocaleTimeString('zh-CN', { month: '2-digit',day: '2-digit',hour: '2-digit', minute: '2-digit', hour12: false })
-  );
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const {
     isOpen: isCreateModalOpen,
     onOpen: onCreateModalOpen,
@@ -104,26 +120,39 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
   } = useDisclosure();
 
   useEffect(() => {
-    const timer = setInterval(() => setMinStart(getMinStartLocalString()), 60000);
+    const timer = setInterval(() => setNowTick(Date.now()), 15000);
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    setNowLabel(
-      new Date().toLocaleTimeString('zh-CN', { month: '2-digit',day: '2-digit',hour: '2-digit', minute: '2-digit', hour12: false })
-    );
-    const timer = setInterval(() => {
-      setNowLabel(
-        new Date().toLocaleTimeString('zh-CN', { month: '2-digit',day: '2-digit',hour: '2-digit', minute: '2-digit', hour12: false })
-      );
-    }, 60000);
-    return () => clearInterval(timer);
-  }, []);
+  const effectiveMaxAdvanceHours = config.maxAdvanceHours ?? DEFAULT_MAX_ADVANCE_HOURS;
+
+  const minStart = useMemo(() => getMinStartLocalString(nowTick), [nowTick]);
+  const maxStart = useMemo(
+    () => getMaxStartLocalString(nowTick, effectiveMaxAdvanceHours),
+    [nowTick, effectiveMaxAdvanceHours]
+  );
+
+  const nowLabel = useMemo(() => formatNowLabel(nowTick), [nowTick]);
+
+  const reservationsWithStatus = useMemo(() => {
+    return reservations.map((room) => {
+      const start = new Date(room.startTimeUtc).getTime();
+      const end = start + room.durationMinutes * 60000;
+      const derivedStatus: ReservationStatus =
+        nowTick < start ? 'Upcoming' : nowTick <= end ? 'Ongoing' : 'Ended';
+
+      if (room.status === derivedStatus) {
+        return room;
+      }
+
+      return { ...room, status: derivedStatus };
+    });
+  }, [reservations, nowTick]);
 
   const hostCount = useMemo(() => {
     if (!currentUserId) return 0;
-    return reservations.filter((room) => room.host.id === currentUserId && room.status !== 'Ended').length;
-  }, [reservations, currentUserId]);
+    return reservationsWithStatus.filter((room) => room.host.id === currentUserId && room.status !== 'Ended').length;
+  }, [reservationsWithStatus, currentUserId]);
 
   const isHostLimitReached = hostCount >= config.maxOwnedRooms;
 
@@ -151,6 +180,19 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
     const now = new Date();
     if (parsedStart.getTime() < now.getTime() + 10 * 60 * 1000) {
       toast({ title: '提示', description: '开始时间需要晚于当前时间 10 分钟。', status: 'warning', duration: 3000, isClosable: true, position: 'bottom' });
+      return;
+    }
+
+    const maxAdvanceMs = effectiveMaxAdvanceHours * 60 * 60 * 1000;
+    if (parsedStart.getTime() > now.getTime() + maxAdvanceMs) {
+      toast({
+        title: '提示',
+        description: `开始时间最多只能晚于当前时间 ${effectiveMaxAdvanceHours} 小时。`,
+        status: 'warning',
+        duration: 3000,
+        isClosable: true,
+        position: 'bottom',
+      });
       return;
     }
 
@@ -265,14 +307,19 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
           <Divider />
 
           <Stack spacing={4}>
-            {reservations.length === 0 && (
+            {reservationsWithStatus.length === 0 && (
               <Text color="text.2">还没有任何预约，抢先创建一个吧！</Text>
             )}
 
-            {reservations.map((room) => {
+            {reservationsWithStatus.map((room) => {
               const isParticipant = room.participants.some((p) => p.id === currentUserId);
               const isHost = room.host.id === currentUserId;
               const isEnded = room.status === 'Ended';
+              const leaveDisabledReason = room.status === 'Ongoing'
+                ? '进行中的预约暂不支持离开。'
+                : room.status === 'Ended'
+                  ? '已结束的预约无法变更成员。'
+                  : undefined;
               const participantNames = room.participants.map((p) => p.name).join('、');
 
               return (
@@ -287,18 +334,15 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
                   <Stack spacing={2}>
                     <Flex justify="space-between" align={{ base: 'flex-start', md: 'center' }} direction={{ base: 'column', md: 'row' }}>
                       <Heading size="sm">{room.title}</Heading>
-                      <Text fontSize="sm" color="text.2">
+                      {/*<Text fontSize="sm" color="text.2">
                         当前时间 {nowLabel}，状态：{statusLabelMap[room.status] ?? room.status}
-                      </Text>
+                      </Text> */}
                     </Flex>
                     <Text fontSize="sm" color="text.2">
-                      时间段：{formatDateRange(room)}
+                      时间段：{formatDateRange(room)} 当前时间 {nowLabel}，状态：{statusLabelMap[room.status] ?? room.status}
                     </Text>
                     <Text fontSize="sm">
-                      房主：{room.host.name}{isHost ? '（你）' : ''}
-                    </Text>
-                    <Text fontSize="sm">
-                      参与者：{participantNames || '暂无参与者'}
+                      房主：{room.host.name}{isHost ? '（你）' : ''} 参与者：{participantNames || '暂无参与者'}
                     </Text>
                     {room.detail && (
                       <>
@@ -340,7 +384,8 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
                           variant="outline"
                           onClick={() => handleLeave(room.id)}
                           isLoading={processingRoomId === room.id}
-                          isDisabled={!conn}
+                          isDisabled={!conn || room.status !== 'Upcoming'}
+                          title={leaveDisabledReason}
                         >
                           离开预约
                         </Button>
@@ -399,6 +444,7 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
                     value={startAt}
                     onChange={(event) => setStartAt(event.target.value)}
                     min={minStart}
+                    max={maxStart}
                     color="text.1"
                     bg="bg.2"
                     sx={{
