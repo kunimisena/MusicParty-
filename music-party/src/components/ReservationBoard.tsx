@@ -14,7 +14,15 @@ import {
   Stack,
   Text,
   Textarea,
+  useDisclosure,
   useToast,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
 } from '@chakra-ui/react';
 import {
   Connection,
@@ -89,6 +97,11 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
   const [nowLabel, setNowLabel] = useState(
     new Date().toLocaleTimeString('zh-CN', { month: '2-digit',day: '2-digit',hour: '2-digit', minute: '2-digit', hour12: false })
   );
+  const {
+    isOpen: isCreateModalOpen,
+    onOpen: onCreateModalOpen,
+    onClose: onCreateModalClose,
+  } = useDisclosure();
 
   useEffect(() => {
     const timer = setInterval(() => setMinStart(getMinStartLocalString()), 60000);
@@ -97,11 +110,11 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
 
   useEffect(() => {
     setNowLabel(
-      new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+      new Date().toLocaleTimeString('zh-CN', { month: '2-digit',day: '2-digit',hour: '2-digit', minute: '2-digit', hour12: false })
     );
     const timer = setInterval(() => {
       setNowLabel(
-        new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+        new Date().toLocaleTimeString('zh-CN', { month: '2-digit',day: '2-digit',hour: '2-digit', minute: '2-digit', hour12: false })
       );
     }, 60000);
     return () => clearInterval(timer);
@@ -178,6 +191,7 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
       setDetail('');
       setStartAt('');
       setDuration('60');
+      onCreateModalClose();
       toast({ title: '成功', description: '预约已创建。', status: 'success', duration: 3000, isClosable: true, position: 'bottom' });
     } catch (error: any) {
       const message = error?.message ?? '创建预约失败，请稍后重试。';
@@ -228,73 +242,25 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
       </CardHeader>
       <CardBody>
         <Stack spacing={5}>
-          <Box p={4} borderWidth="1px" borderRadius="lg" bg="bg.3">
-            <Stack spacing={3}>
-              <Heading size="sm">创建预约</Heading>
-              <Input
-                placeholder="预约标题"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                color="text.1"
-              />
-              <Textarea
-                placeholder="预约详情（可选）"
-                value={detail}
-                onChange={(event) => setDetail(event.target.value)}
-                rows={3}
-                color="text.1"
-              />
-              <Flex direction={{ base: 'column', md: 'row' }} gap={3}>
-                <FormControl flex={1}>
-                  <FormLabel mb={1} color="text.2" fontSize="sm">
-                    预约开始时间
-                  </FormLabel>
-                  <Input
-                    type="datetime-local"
-                    value={startAt}
-                    onChange={(event) => setStartAt(event.target.value)}
-                    min={minStart}
-                    color="text.1"
-                    bg="bg.2"
-                    sx={{
-                      '&::-webkit-calendar-picker-indicator': {
-                        filter: 'invert(0.8)',
-                        cursor: 'pointer',
-                        transform: 'scale(1.2)',
-                        transformOrigin: 'center',
-                      },
-                    }}
-                  />
-                </FormControl>
-                <FormControl flex={{ base: 1, md: '0 0 200px' }}>
-                  <FormLabel mb={1} color="text.2" fontSize="sm">
-                    持续时间（分钟）
-                  </FormLabel>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={config.maxDurationMinutes}
-                    value={duration}
-                    onChange={(event) => setDuration(event.target.value.replace(/[^0-9]/g, ''))}
-                    placeholder={`持续分钟数 (≤ ${config.maxDurationMinutes})`}
-                    color="text.1"
-                  />
-                </FormControl>
-              </Flex>
-              <Button
-                onClick={handleCreate}
-                isLoading={isCreating}
-                isDisabled={!conn || isHostLimitReached}
-              >
-                创建预约
-              </Button>
-              {isHostLimitReached && (
-                <Text fontSize="sm" color="text.2">
-                  您作为房主的预约已达上限，请先交接或等待预约结束。
-                </Text>
-              )}
-            </Stack>
-          </Box>
+          <Flex
+            direction={{ base: 'column', md: 'row' }}
+            align={{ base: 'stretch', md: 'center' }}
+            justify="space-between"
+            gap={3}
+          >
+            <Button
+              onClick={onCreateModalOpen}
+              isDisabled={!conn || isHostLimitReached}
+              alignSelf={{ base: 'stretch', md: 'flex-start' }}
+            >
+              创建预约
+            </Button>
+            {isHostLimitReached && (
+              <Text fontSize="sm" color="text.2">
+                您作为房主的预约已达上限，请先交接或等待预约结束。
+              </Text>
+            )}
+          </Flex>
 
           <Divider />
 
@@ -398,6 +364,84 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
           )}
         </Stack>
       </CardBody>
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={isCreating ? () => undefined : onCreateModalClose}
+        isCentered
+        closeOnOverlayClick={!isCreating}
+      >
+        <ModalOverlay />
+        <ModalContent bg="bg.3">
+          <ModalHeader>创建预约</ModalHeader>
+          <ModalCloseButton isDisabled={isCreating} />
+          <ModalBody>
+            <Stack spacing={3}>
+              <Input
+                placeholder="预约标题"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                color="text.1"
+              />
+              <Textarea
+                placeholder="预约详情（可选）"
+                value={detail}
+                onChange={(event) => setDetail(event.target.value)}
+                rows={3}
+                color="text.1"
+              />
+              <Flex direction={{ base: 'column', md: 'row' }} gap={3}>
+                <FormControl flex={1}>
+                  <FormLabel mb={1} color="text.2" fontSize="sm">
+                    预约开始时间
+                  </FormLabel>
+                  <Input
+                    type="datetime-local"
+                    value={startAt}
+                    onChange={(event) => setStartAt(event.target.value)}
+                    min={minStart}
+                    color="text.1"
+                    bg="bg.2"
+                    sx={{
+                      '&::-webkit-calendar-picker-indicator': {
+                        filter: 'invert(0.8)',
+                        cursor: 'pointer',
+                        transform: 'scale(1.2)',
+                        transformOrigin: 'center',
+                      },
+                    }}
+                  />
+                </FormControl>
+                <FormControl flex={{ base: 1, md: '0 0 200px' }}>
+                  <FormLabel mb={1} color="text.2" fontSize="sm">
+                    持续时间（分钟）
+                  </FormLabel>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={config.maxDurationMinutes}
+                    value={duration}
+                    onChange={(event) => setDuration(event.target.value.replace(/[^0-9]/g, ''))}
+                    placeholder={`持续分钟数 (≤ ${config.maxDurationMinutes})`}
+                    color="text.1"
+                  />
+                </FormControl>
+              </Flex>
+            </Stack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onCreateModalClose} isDisabled={isCreating}>
+              取消
+            </Button>
+            <Button
+              onClick={handleCreate}
+              isLoading={isCreating}
+              isDisabled={!conn || isHostLimitReached}
+            >
+              创建预约
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Card>
   );
 };

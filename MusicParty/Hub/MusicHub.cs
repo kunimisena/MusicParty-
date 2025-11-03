@@ -144,10 +144,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
 
         _userManager.TouchUserLastSeen(userId);
 
-        if (RemoveUserFromReservations(userId))
-        {
-            await Clients.All.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
-        }
+        await Clients.All.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
 
         await base.OnDisconnectedAsync(exception);
     }
@@ -463,7 +460,7 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             {
                 _logger.LogInformation("Cleaned up inactive session for user {UserId}.", userId);
                 hubContext.Clients.All.SendAsync("OnlineUserLogout", userId);
-                if (RemoveUserFromReservations(userId) && _reservationUserManager is not null)
+                if (_reservationUserManager is not null)
                 {
                     var snapshot = BuildReservationSnapshot(_reservationUserManager);
                     hubContext.Clients.All.SendAsync("ReservationSnapshot", snapshot);
@@ -609,10 +606,25 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
                 .ToList();
         }
 
-        var recentVisitors = userManager
-            .GetUsersLastSeenWithin(TimeSpan.FromHours(24))
-            .Select(user => new { id = user.Id, name = user.Name, lastSeenUtc = user.LastSeen })
-            .ToList();
+        var recentVisitors = new List<object>();
+        var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var user in userManager
+                     .GetUsersLastSeenWithin(TimeSpan.FromHours(24))
+                     .OrderByDescending(user => user.LastSeen))
+        {
+            if (string.IsNullOrWhiteSpace(user.Name))
+            {
+                continue;
+            }
+
+            if (!seenNames.Add(user.Name))
+            {
+                continue;
+            }
+
+            recentVisitors.Add(new { id = user.Id, name = user.Name, lastSeenUtc = user.LastSeen });
+        }
 
         return new
         {
