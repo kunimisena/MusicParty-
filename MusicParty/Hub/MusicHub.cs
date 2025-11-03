@@ -5,6 +5,8 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
+using System.Threading;
+using System.Linq;
 using MusicParty.Utils;
 
 namespace MusicParty.Hub;
@@ -39,12 +41,60 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     private static bool _historyLoaded = false;
     private static readonly LinkedList<ChatMessage> _messageQueue = new();
 
+    private const int ReservationMaxRooms = 20;
+    private const int ReservationMaxOwnedRooms = 2;
+    private const int ReservationMaxDurationMinutes = 120;
+    private static readonly object _reservationLock = new();
+    private static readonly List<ReservationRoom> _reservations = new();
+    private static UserManager? _reservationUserManager;
+
+    private enum ReservationStatus
+    {
+        Upcoming,
+        Ongoing,
+        Ended
+    }
+
+    private record ReservationParticipant(string UserId, string UserName, DateTime JoinedAtUtc);
+
+    private class ReservationRoom
+    {
+        public string Id { get; } = Guid.NewGuid().ToString("N");
+        public string Title { get; set; } = string.Empty;
+        public string Detail { get; set; } = string.Empty;
+        public string HostId { get; set; } = string.Empty;
+        public string HostName { get; set; } = string.Empty;
+        public DateTime StartTimeUtc { get; set; }
+        public int DurationMinutes { get; set; }
+        public DateTime CreatedAtUtc { get; set; }
+        public List<ReservationParticipant> Participants { get; } = new();
+
+        public DateTime EndTimeUtc => StartTimeUtc.AddMinutes(DurationMinutes);
+
+        public ReservationStatus GetStatus(DateTime nowUtc)
+        {
+            if (nowUtc < StartTimeUtc)
+            {
+                return ReservationStatus.Upcoming;
+            }
+
+            if (nowUtc <= EndTimeUtc)
+            {
+                return ReservationStatus.Ongoing;
+            }
+
+            return ReservationStatus.Ended;
+        }
+    }
+
     public MusicHub(UserManager userManager, MusicBroadcaster musicBroadcaster, IEnumerable<IMusicApi> musicApis, ILogger<MusicHub> logger, IHubContext<MusicHub> hubContext)
     {
         _userManager = userManager;
         _musicBroadcaster = musicBroadcaster;
         _musicApis = musicApis;
         _logger = logger;
+
+        Interlocked.CompareExchange(ref _reservationUserManager, userManager, null);
 
         LoadChatHistoryFromFile();
         Interlocked.CompareExchange(ref _cleanupTimer, new Timer(CleanupInactiveSessions, hubContext, _cleanupInterval, _cleanupInterval), null);
@@ -73,6 +123,8 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             await Clients.Caller.SendAsync("SetNowPlaying", music, enqueuerName, (int)(DateTime.Now - _musicBroadcaster.NowPlayingStartedTime).TotalSeconds);
         }
 
+        await Clients.Caller.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
+
         await base.OnConnectedAsync();
     }
 
@@ -88,6 +140,13 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
         if (_sessions.TryRemove(userId, out _))
         {
             await OnlineUserLogout(userId);
+        }
+
+        _userManager.TouchUserLastSeen(userId);
+
+        if (RemoveUserFromReservations(userId))
+        {
+            await Clients.All.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
         }
 
         await base.OnDisconnectedAsync(exception);
@@ -216,6 +275,109 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             new { x.Music, x.ApiName, x.EnqueuerName, x.Timestamp });
     }
 
+    public async Task CreateReservation(string title, string detail, DateTime startTimeUtc, int durationMinutes)
+    {
+        var userId = Context.User!.Identity!.Name!;
+        var hostName = _userManager.FindUserById(userId)?.Name ?? "未知用户";
+        var nowUtc = DateTime.UtcNow;
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new HubException("预约标题不能为空。");
+        }
+
+        if (durationMinutes <= 0 || durationMinutes > ReservationMaxDurationMinutes)
+        {
+            throw new HubException($"预约时长需在 1 至 {ReservationMaxDurationMinutes} 分钟之间。");
+        }
+
+        startTimeUtc = DateTime.SpecifyKind(startTimeUtc, DateTimeKind.Utc);
+
+        if (startTimeUtc < nowUtc.AddMinutes(10))
+        {
+            throw new HubException("开始时间至少需要晚于当前时间 10 分钟。");
+        }
+
+        lock (_reservationLock)
+        {
+            TrimExceededReservationsUnsafe(nowUtc);
+
+            var activeCount = _reservations.Count(room => room.GetStatus(nowUtc) != ReservationStatus.Ended);
+            if (activeCount >= ReservationMaxRooms)
+            {
+                throw new HubException("当前预约数量已达上限，请稍后再试。");
+            }
+
+            var ownedCount = _reservations.Count(room => room.HostId == userId && room.GetStatus(nowUtc) != ReservationStatus.Ended);
+            if (ownedCount >= ReservationMaxOwnedRooms)
+            {
+                throw new HubException($"您已拥有 {ReservationMaxOwnedRooms} 个预约，无法再创建新的预约。");
+            }
+
+            var room = new ReservationRoom
+            {
+                Title = title.Trim(),
+                Detail = string.IsNullOrWhiteSpace(detail) ? string.Empty : detail.Trim(),
+                HostId = userId,
+                HostName = hostName,
+                StartTimeUtc = startTimeUtc,
+                DurationMinutes = durationMinutes,
+                CreatedAtUtc = nowUtc
+            };
+
+            room.Participants.Add(new ReservationParticipant(userId, hostName, nowUtc));
+            _reservations.Add(room);
+
+            TrimExceededReservationsUnsafe(nowUtc);
+        }
+
+        await Clients.All.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
+    }
+
+    public async Task JoinReservation(string reservationId)
+    {
+        var userId = Context.User!.Identity!.Name!;
+        var userName = _userManager.FindUserById(userId)?.Name ?? "未知用户";
+        var nowUtc = DateTime.UtcNow;
+        var hasJoined = false;
+
+        lock (_reservationLock)
+        {
+            var room = _reservations.FirstOrDefault(r => r.Id == reservationId);
+            if (room is null)
+            {
+                throw new HubException("预约不存在或已被删除。");
+            }
+
+            if (room.GetStatus(nowUtc) == ReservationStatus.Ended)
+            {
+                throw new HubException("该预约已结束。");
+            }
+
+            if (room.Participants.Any(p => p.UserId == userId))
+            {
+                return;
+            }
+
+            room.Participants.Add(new ReservationParticipant(userId, userName, nowUtc));
+            hasJoined = true;
+        }
+
+        if (hasJoined)
+        {
+            await Clients.All.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
+        }
+    }
+
+    public async Task LeaveReservation(string reservationId)
+    {
+        var userId = Context.User!.Identity!.Name!;
+        if (RemoveUserFromReservations(userId, reservationId))
+        {
+            await Clients.All.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
+        }
+    }
+
     public async Task DisableAutoDj()
     {
         MusicBroadcaster.IsAutoDjManuallyDisabled = true;
@@ -278,6 +440,10 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
     {
         var newUserName = _userManager.FindUserById(id)!.Name;
         await _musicBroadcaster.BroadcastUserRenameAsync(id, newUserName);
+        if (UpdateReservationUserName(id, newUserName))
+        {
+            await Clients.All.SendAsync("ReservationSnapshot", BuildReservationSnapshot(_userManager));
+        }
     }
 
     private void CleanupInactiveSessions(object? state)
@@ -297,10 +463,170 @@ public class MusicHub : Microsoft.AspNetCore.SignalR.Hub
             {
                 _logger.LogInformation("Cleaned up inactive session for user {UserId}.", userId);
                 hubContext.Clients.All.SendAsync("OnlineUserLogout", userId);
+                if (RemoveUserFromReservations(userId) && _reservationUserManager is not null)
+                {
+                    var snapshot = BuildReservationSnapshot(_reservationUserManager);
+                    hubContext.Clients.All.SendAsync("ReservationSnapshot", snapshot);
+                }
             }
         }
     }
-    
+
+    private static void TrimExceededReservationsUnsafe(DateTime nowUtc)
+    {
+        var emptyRooms = _reservations.Where(room => room.Participants.Count == 0).ToList();
+        foreach (var room in emptyRooms)
+        {
+            _reservations.Remove(room);
+        }
+
+        if (_reservations.Count <= ReservationMaxRooms) return;
+
+        var endedRooms = _reservations
+            .Where(room => room.GetStatus(nowUtc) == ReservationStatus.Ended)
+            .OrderBy(room => room.EndTimeUtc)
+            .ToList();
+
+        foreach (var room in endedRooms)
+        {
+            if (_reservations.Count <= ReservationMaxRooms) break;
+            _reservations.Remove(room);
+        }
+    }
+
+    private static bool RemoveUserFromReservations(string userId, string? reservationId = null)
+    {
+        var changed = false;
+        lock (_reservationLock)
+        {
+            var nowUtc = DateTime.UtcNow;
+            var targetRooms = reservationId is null
+                ? _reservations.ToList()
+                : _reservations.Where(room => room.Id == reservationId).ToList();
+
+            foreach (var room in targetRooms)
+            {
+                var participantIndex = room.Participants.FindIndex(p => p.UserId == userId);
+                if (participantIndex < 0) continue;
+
+                room.Participants.RemoveAt(participantIndex);
+                changed = true;
+
+                if (room.HostId == userId)
+                {
+                    if (room.Participants.Count > 0)
+                    {
+                        var nextHost = room.Participants.OrderBy(p => p.JoinedAtUtc).First();
+                        room.HostId = nextHost.UserId;
+                        room.HostName = nextHost.UserName;
+                    }
+                    else
+                    {
+                        _reservations.Remove(room);
+                        if (reservationId is not null) break;
+                        continue;
+                    }
+                }
+                else if (room.Participants.Count == 0)
+                {
+                    _reservations.Remove(room);
+                    if (reservationId is not null) break;
+                    continue;
+                }
+
+                if (reservationId is not null)
+                {
+                    break;
+                }
+            }
+
+            TrimExceededReservationsUnsafe(nowUtc);
+        }
+
+        return changed;
+    }
+
+    private static bool UpdateReservationUserName(string userId, string newName)
+    {
+        var updated = false;
+        lock (_reservationLock)
+        {
+            foreach (var room in _reservations)
+            {
+                if (room.HostId == userId && room.HostName != newName)
+                {
+                    room.HostName = newName;
+                    updated = true;
+                }
+
+                for (var i = 0; i < room.Participants.Count; i++)
+                {
+                    if (room.Participants[i].UserId == userId && room.Participants[i].UserName != newName)
+                    {
+                        room.Participants[i] = room.Participants[i] with { UserName = newName };
+                        updated = true;
+                    }
+                }
+            }
+        }
+
+        return updated;
+    }
+
+    private static object BuildReservationSnapshot(UserManager userManager)
+    {
+        var nowUtc = DateTime.UtcNow;
+        List<object> rooms;
+
+        lock (_reservationLock)
+        {
+            TrimExceededReservationsUnsafe(nowUtc);
+
+            rooms = _reservations
+                .OrderBy(room => room.GetStatus(nowUtc) switch
+                {
+                    ReservationStatus.Ongoing => 0,
+                    ReservationStatus.Upcoming => 1,
+                    _ => 2
+                })
+                .ThenBy(room => room.StartTimeUtc)
+                .ThenBy(room => room.CreatedAtUtc)
+                .Select(room => (object)new
+                {
+                    id = room.Id,
+                    title = room.Title,
+                    detail = room.Detail,
+                    host = new { id = room.HostId, name = room.HostName },
+                    participants = room.Participants
+                        .OrderBy(p => p.JoinedAtUtc)
+                        .Select(p => new { id = p.UserId, name = p.UserName, joinedAtUtc = p.JoinedAtUtc })
+                        .ToList(),
+                    startTimeUtc = room.StartTimeUtc,
+                    durationMinutes = room.DurationMinutes,
+                    status = room.GetStatus(nowUtc).ToString(),
+                    createdAtUtc = room.CreatedAtUtc
+                })
+                .ToList();
+        }
+
+        var recentVisitors = userManager
+            .GetUsersLastSeenWithin(TimeSpan.FromHours(24))
+            .Select(user => new { id = user.Id, name = user.Name, lastSeenUtc = user.LastSeen })
+            .ToList();
+
+        return new
+        {
+            rooms,
+            config = new
+            {
+                maxRooms = ReservationMaxRooms,
+                maxOwnedRooms = ReservationMaxOwnedRooms,
+                maxDurationMinutes = ReservationMaxDurationMinutes
+            },
+            recentVisitors
+        };
+    }
+
     private void LoadChatHistoryFromFile()
     {
         lock (_fileLock)

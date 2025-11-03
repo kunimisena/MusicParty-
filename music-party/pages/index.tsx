@@ -1,6 +1,15 @@
 import Head from 'next/head';
 import React, { useEffect, useRef, useState, useCallback, useContext, memo } from 'react';
-import { Connection, Music, MusicOrderAction, PlayHistoryEntry } from '../src/api/musichub';
+import {
+  Connection,
+  Music,
+  MusicOrderAction,
+  PlayHistoryEntry,
+  ReservationRoom,
+  ReservationConfig,
+  ReservationSnapshot,
+  RecentVisitor,
+} from '../src/api/musichub';
 import {
   Text, Button, Card, CardBody, CardHeader, Grid, GridItem, Heading, Input, ListItem,
   Tab, TabList, TabPanel, TabPanels, Tabs, useToast, Stack, Popover,
@@ -22,6 +31,7 @@ import { MusicPlayerController } from '../src/components/MusicPlayerController';
 // [新增] 引入新的AdminPanel组件
 import { AdminPanel } from '../src/components/Admin';
 import { Radio, RadioGroup } from '@chakra-ui/react';
+import { ReservationBoard } from '../src/components/ReservationBoard';
 
 
 interface NowPlayingDisplayProps {
@@ -174,6 +184,7 @@ export default function Home() {
   const [playtime, setPlaytime] = useState(0);
   const [nowPlaying, setNowPlaying] = useState<{ music: Music; enqueuer: string; }>();
   const [queue, setQueue] = useState<MusicOrderAction[]>([]);
+  const [userId, setUserId] = useState('');
   const [userName, setUserName] = useState('');
   const [newName, setNewName] = useState('');
   
@@ -192,6 +203,14 @@ export default function Home() {
   const [playHistory, setPlayHistory] = useState<PlayHistoryEntry[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
 
+  const [reservationRooms, setReservationRooms] = useState<ReservationRoom[]>([]);
+  const [reservationConfig, setReservationConfig] = useState<ReservationConfig>({
+    maxRooms: 20,
+    maxOwnedRooms: 2,
+    maxDurationMinutes: 120,
+  });
+  const [recentVisitors, setRecentVisitors] = useState<RecentVisitor[]>([]);
+
   // [修改] 您的管理员密码
   const ADMIN_PASSWORD = "admin"; // 警告: 这只是一个示例密码
   const [isAdmin, setIsAdmin] = useState(false);
@@ -208,6 +227,38 @@ export default function Home() {
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const endpoint = '/Api/touchLastSeen';
+    const sendLastSeen = () => {
+      const payload = JSON.stringify({});
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(endpoint, new Blob([payload], { type: 'application/json' }));
+          return;
+        }
+      } catch (err) {
+        // 如果 sendBeacon 调用失败，继续使用 fetch 兜底
+      }
+
+      fetch(endpoint, {
+        method: 'POST',
+        body: payload,
+        headers: { 'Content-Type': 'application/json' },
+        keepalive: true,
+      }).catch(() => {
+        /* 忽略错误，避免阻塞页面关闭 */
+      });
+    };
+
+    window.addEventListener('pagehide', sendLastSeen);
+    window.addEventListener('beforeunload', sendLastSeen);
+
+    return () => {
+      window.removeEventListener('pagehide', sendLastSeen);
+      window.removeEventListener('beforeunload', sendLastSeen);
     };
   }, []);
 
@@ -284,6 +335,12 @@ export default function Home() {
     setPlayHistory(prev => [entry, ...prev]);
   }, []);
 
+  const onReservationSnapshot = useCallback((snapshot: ReservationSnapshot) => {
+    setReservationRooms(snapshot.rooms);
+    setReservationConfig(snapshot.config);
+    setRecentVisitors(snapshot.recentVisitors);
+  }, []);
+
   const syncIdentityAndState = useCallback(async () => {
     if (!conn.current || isSyncing.current) return;
     isSyncing.current = true;
@@ -291,6 +348,7 @@ export default function Home() {
       const preferredName = getCookie(COOKIE_USERNAME_KEY) || DEFAULT_USERNAME_ON_NO_COOKIE;
       const userProfile = await conn.current.rename(preferredName);
       setPersistentUserId(userProfile.id);
+      setUserId(userProfile.id);
       setUserName(userProfile.name);
       setCookie(COOKIE_USERNAME_KEY, userProfile.name, 365);
       const usersFromServer = await conn.current.getOnlineUsers();
@@ -323,7 +381,8 @@ export default function Home() {
     conn.current = new Connection(
       hubUrl, onSetNowPlaying, onMusicEnqueued, onMusicDequeued, onMusicTopped, onMusicCut,
       onOnlineUserLogin, onOnlineUserLogout, onOnlineUserRename, onNewChat, onGlobalMessage,
-      onAutoDjStatusChanged, onAbort, onReconnected, onStopPlayback, onNewPlayHistoryEntry
+      onAutoDjStatusChanged, onAbort, onReconnected, onStopPlayback, onNewPlayHistoryEntry,
+      onReservationSnapshot
     );
 
     conn.current.start()
@@ -405,6 +464,7 @@ export default function Home() {
                                   }
                                   const user = await conn.current!.rename(trimmedName);
                                   setPersistentUserId(user.id);
+                                  setUserId(user.id);
                                   setUserName(user.name);
                                   setCookie(COOKIE_USERNAME_KEY, user.name, 365);
                                   t({ title: '提示', description: `名字已成功修改为: ${user.name}`, status: 'info', duration: 3000, isClosable: true, position: 'bottom' });
@@ -476,6 +536,7 @@ export default function Home() {
 
           <Tabs variant='soft-rounded'>
             <TabList m={4} mt={0}>
+                <Tab>听歌预约</Tab>
                 <Tab>播放队列</Tab>
                 <Tab>从ID或链接点歌</Tab>
                 <Tab>从歌单点歌</Tab>
@@ -483,6 +544,15 @@ export default function Home() {
                 {isAdmin && <Tab>🔧 管理员后台</Tab>}
             </TabList>
             <TabPanels>
+              <TabPanel pt={0}>
+                <ReservationBoard
+                  conn={conn.current}
+                  reservations={reservationRooms}
+                  config={reservationConfig}
+                  currentUserId={userId}
+                  recentVisitors={recentVisitors}
+                />
+              </TabPanel>
               <TabPanel pt={0}>
                 <Card minH={{ base: '60vh', md: '70vh' }}>
                   <CardBody>

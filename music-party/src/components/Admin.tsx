@@ -163,6 +163,16 @@ const PlaylistGenerator = ({ conn }: AdminPanelProps) => {
                                     type="datetime-local"
                                     value={startTime}
                                     onChange={(e) => setStartTime(e.target.value)}
+                                    color="text.1"
+                                    bg="bg.2"
+                                    sx={{
+                                        '&::-webkit-calendar-picker-indicator': {
+                                            filter: 'invert(0.8)',
+                                            cursor: 'pointer',
+                                            transform: 'scale(1.2)',
+                                            transformOrigin: 'center',
+                                        },
+                                    }}
                                 />
                             </Box>
                             <Box>
@@ -171,6 +181,16 @@ const PlaylistGenerator = ({ conn }: AdminPanelProps) => {
                                     type="datetime-local"
                                     value={endTime}
                                     onChange={(e) => setEndTime(e.target.value)}
+                                    color="text.1"
+                                    bg="bg.2"
+                                    sx={{
+                                        '&::-webkit-calendar-picker-indicator': {
+                                            filter: 'invert(0.8)',
+                                            cursor: 'pointer',
+                                            transform: 'scale(1.2)',
+                                            transformOrigin: 'center',
+                                        },
+                                    }}
                                 />
                             </Box>
                         </Stack>

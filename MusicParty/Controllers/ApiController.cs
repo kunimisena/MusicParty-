@@ -63,6 +63,13 @@ public class ApiController : ControllerBase
         return Ok(user.MusicApiServiceBindings.ToArray());
     }
 
+    [HttpPost, Route("touchLastSeen"), Authorize]
+    public IActionResult TouchLastSeen()
+    {
+        _userManager.TouchUserLastSeen(HttpContext.User.Identity!.Name!);
+        return Ok();
+    }
+
     [HttpGet, Route("{apiName}/myplaylists"), Authorize]
     public async Task<IActionResult> MyPlaylists(string apiName)
     {

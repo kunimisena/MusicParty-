@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Linq;
 
 namespace MusicParty;
 
@@ -173,7 +174,7 @@ public class UserManager
             }
         }
     }
-    
+
     public void UpdateUserLastSeen(string id)
     {
         // [分支1688修改] 核心容错逻辑
@@ -194,5 +195,31 @@ public class UserManager
             _logger.LogWarning("用户 {UserId} 在档案中不存在，将为其重建档案（来自UpdateUserLastSeen调用）。", id);
             CreateUser(id, id); // 使用CreateUser方法来创建并保存
         }
+    }
+
+    public void TouchUserLastSeen(string id)
+    {
+        if (_users.TryGetValue(id, out var oldUser))
+        {
+            var updatedUser = oldUser with { LastSeen = DateTime.UtcNow };
+            if (_users.TryUpdate(id, updatedUser, oldUser))
+            {
+                _ = SaveUsersToFileAsync();
+            }
+        }
+        else
+        {
+            _logger.LogWarning("用户 {UserId} 在档案中不存在，将为其重建档案（来自TouchUserLastSeen调用）。", id);
+            CreateUser(id, id);
+        }
+    }
+
+    public IReadOnlyList<User> GetUsersLastSeenWithin(TimeSpan window)
+    {
+        var threshold = DateTime.UtcNow - window;
+        return _users.Values
+            .Where(user => user.LastSeen >= threshold)
+            .OrderByDescending(user => user.LastSeen)
+            .ToList();
     }
 }

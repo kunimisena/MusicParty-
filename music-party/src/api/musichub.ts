@@ -14,6 +14,51 @@ export interface PlayHistoryEntry {
   timestamp: string;
 }
 
+export interface ReservationParticipant {
+  id: string;
+  name: string;
+  joinedAtUtc: string;
+}
+
+export type ReservationStatus = 'Upcoming' | 'Ongoing' | 'Ended';
+
+export interface ReservationRoom {
+  id: string;
+  title: string;
+  detail: string;
+  host: { id: string; name: string };
+  participants: ReservationParticipant[];
+  startTimeUtc: string;
+  durationMinutes: number;
+  status: ReservationStatus;
+  createdAtUtc: string;
+}
+
+export interface ReservationConfig {
+  maxRooms: number;
+  maxOwnedRooms: number;
+  maxDurationMinutes: number;
+}
+
+export interface RecentVisitor {
+  id: string;
+  name: string;
+  lastSeenUtc: string;
+}
+
+export interface ReservationSnapshot {
+  rooms: ReservationRoom[];
+  config: ReservationConfig;
+  recentVisitors: RecentVisitor[];
+}
+
+export interface ReservationCreationPayload {
+  title: string;
+  detail: string;
+  startTimeUtc: string;
+  durationMinutes: number;
+}
+
 export class Connection {
   private _conn: sr.HubConnection;
   constructor(
@@ -40,11 +85,12 @@ export class Connection {
     abort: (msg: string) => void,
     onReconnected: () => Promise<void>,
     stopPlayback: () => void,
-    newPlayHistoryEntry: (entry: PlayHistoryEntry) => void
+    newPlayHistoryEntry: (entry: PlayHistoryEntry) => void,
+    reservationsUpdated: (snapshot: ReservationSnapshot) => void
   ) {
     this._conn = new sr.HubConnectionBuilder()
       .withUrl(url)
-      .withAutomaticReconnect() 
+      .withAutomaticReconnect()
       .build();
     this._conn.on("SetNowPlaying", setNowPlaying);
     this._conn.on("MusicEnqueued", musicEnqueued);
@@ -58,9 +104,10 @@ export class Connection {
     this._conn.on("GlobalMessage", globalMessage);
     this._conn.on("AutoDjStatusChanged", autoDjStatusChanged);
     this._conn.on("Abort", abort);
-    
+
     this._conn.on("StopPlayback", stopPlayback);
     this._conn.on("NewPlayHistoryEntry", newPlayHistoryEntry);
+    this._conn.on("ReservationSnapshot", reservationsUpdated);
 
     this._conn.onreconnected(async () => {
         console.log("Connection re-established. Triggering sync logic.");
@@ -134,6 +181,18 @@ export class Connection {
 
   public async adminRestartServer(): Promise<void> {
     await this._conn.invoke("AdminRestartServer");
+  }
+
+  public async createReservation(payload: ReservationCreationPayload): Promise<void> {
+    await this._conn.invoke("CreateReservation", payload.title, payload.detail, payload.startTimeUtc, payload.durationMinutes);
+  }
+
+  public async joinReservation(reservationId: string): Promise<void> {
+    await this._conn.invoke("JoinReservation", reservationId);
+  }
+
+  public async leaveReservation(reservationId: string): Promise<void> {
+    await this._conn.invoke("LeaveReservation", reservationId);
   }
 }
 export interface Music {
