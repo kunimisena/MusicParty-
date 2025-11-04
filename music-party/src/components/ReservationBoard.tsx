@@ -274,7 +274,7 @@ export const ReservationBoard: React.FC<ReservationBoardProps> = ({
   return (
     <Card>
       <CardHeader>
-        <Heading size="md">听歌预定</Heading>
+        <Heading size="md">听歌预约</Heading>
         <Text fontSize="sm" color="text.2" mt={2}>
           预约功能仅仅为了用户间约定时间，增加相遇的概率，提供网站的约定平台，无其他用途。
         </Text>

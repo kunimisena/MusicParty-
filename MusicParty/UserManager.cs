@@ -85,8 +85,8 @@ public class UserManager
     public async Task LoginAsync(string id)
     {
         var claims = new List<Claim> { new(ClaimTypes.Name, id) };
-        var user = new ClaimsPrincipal(new ClaimsIdentity(claims, "Cookies")); 
-        
+        var user = new ClaimsPrincipal(new ClaimsIdentity(claims, "Cookies"));
+
         var authProperties = new AuthenticationProperties
         {
             IsPersistent = true,
@@ -95,24 +95,6 @@ public class UserManager
         };
 
         await _accessor.HttpContext!.SignInAsync("Cookies", user, authProperties);
-
-        // [分支1688修改] 登录时，如果用户档案不存在，则创建它。
-        // 这是为了确保即使用户的cookie有效但档案丢失，也能在此处得到重建。
-        if (!_users.ContainsKey(id))
-        {
-            CreateUser(id, id); // 使用ID作为默认名
-        }
-    }
-
-    public void CreateUser(string id, string name)
-    {
-        if (_users.ContainsKey(id)) return;
-
-        var newUser = new User(id, name);
-        if (_users.TryAdd(id, newUser))
-        {
-            _ = SaveUsersToFileAsync();
-        }
     }
 
     public User? FindUserById(string id)
@@ -148,17 +130,11 @@ public class UserManager
 
     public async Task BindMusicApiService(string id, string apiName, string identifier)
     {
-        // [分支1688修改] 核心容错逻辑
-        // 同样地，如果用户档案不存在，则为其创建新档案并直接添加绑定信息。
+        // 只有当用户档案已经由前端显式初始化后，才允许绑定外部服务。
+        // 这可以阻止纯后端的探测脚本绕过前端创建持久档案。
         if (!_users.TryGetValue(id, out var oldUser))
         {
-            _logger.LogWarning("用户 {UserId} 在档案中不存在，将为其重建档案并绑定服务。", id);
-            var newBindings = new Dictionary<string, string> { [apiName] = identifier };
-            var newUser = new User(id, id) { MusicApiServiceBindings = newBindings }; // 默认名使用ID
-            if (_users.TryAdd(id, newUser))
-            {
-                await SaveUsersToFileAsync();
-            }
+            throw new InvalidOperationException($"Cannot bind service for user {id} because the profile has not been initialized.");
         }
         else
         {
@@ -177,29 +153,14 @@ public class UserManager
 
     public void UpdateUserLastSeen(string id)
     {
-        // [分支1688修改] 核心容错逻辑
-        // 在更新最后上线时间时，如果发现用户档案不存在，也为其重建。
-        if (_users.TryGetValue(id, out var oldUser))
+        // 只有档案已经建立时才刷新 LastSeen；否则忽略请求，交由前端初始化流程处理。
+        if (!_users.TryGetValue(id, out var oldUser))
         {
-            if (DateTime.UtcNow - oldUser.LastSeen > TimeSpan.FromHours(1))
-            {
-                var updatedUser = oldUser with { LastSeen = DateTime.UtcNow };
-                if (_users.TryUpdate(id, updatedUser, oldUser))
-                {
-                    _ = SaveUsersToFileAsync();
-                }
-            }
+            _logger.LogDebug("忽略对用户 {UserId} 的 LastSeen 更新请求：档案尚未初始化。", id);
+            return;
         }
-        else
-        {
-            _logger.LogWarning("用户 {UserId} 在档案中不存在，将为其重建档案（来自UpdateUserLastSeen调用）。", id);
-            CreateUser(id, id); // 使用CreateUser方法来创建并保存
-        }
-    }
 
-    public void TouchUserLastSeen(string id)
-    {
-        if (_users.TryGetValue(id, out var oldUser))
+        if (DateTime.UtcNow - oldUser.LastSeen > TimeSpan.FromHours(1))
         {
             var updatedUser = oldUser with { LastSeen = DateTime.UtcNow };
             if (_users.TryUpdate(id, updatedUser, oldUser))
@@ -207,10 +168,20 @@ public class UserManager
                 _ = SaveUsersToFileAsync();
             }
         }
-        else
+    }
+
+    public void TouchUserLastSeen(string id)
+    {
+        if (!_users.TryGetValue(id, out var oldUser))
         {
-            _logger.LogWarning("用户 {UserId} 在档案中不存在，将为其重建档案（来自TouchUserLastSeen调用）。", id);
-            CreateUser(id, id);
+            _logger.LogDebug("忽略对用户 {UserId} 的 TouchLastSeen 请求：档案尚未初始化。", id);
+            return;
+        }
+
+        var updatedUser = oldUser with { LastSeen = DateTime.UtcNow };
+        if (_users.TryUpdate(id, updatedUser, oldUser))
+        {
+            _ = SaveUsersToFileAsync();
         }
     }
 

@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MusicParty.MusicApi;
@@ -52,8 +53,15 @@ public class ApiController : ControllerBase
             return BadRequest($"Unknown api provider {apiName}.".BuildResponseMessageWithCode(1));
         
         // [修改] 添加 await，确保在返回OK之前，绑定操作已完成
-        await _userManager.BindMusicApiService(HttpContext.User.Identity!.Name!, apiName, identifier);
-        return Ok();
+        try
+        {
+            await _userManager.BindMusicApiService(HttpContext.User.Identity!.Name!, apiName, identifier);
+            return Ok();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message.BuildResponseMessageWithCode(6));
+        }
     }
 
     [HttpGet, Route("bindinfo"), Authorize]
